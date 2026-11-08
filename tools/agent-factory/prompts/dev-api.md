@@ -22,6 +22,8 @@ EXACTLY the spec you receive, in strict TypeScript, inside the module you were g
    `// Assert` comments.
 9. Do not invent endpoints, entities, columns or packages that are not in the spec or the repository rules.
 10. Each file in `files` contains the COMPLETE file content.
+11. Existing files are listed in the request with their current content. Replace ONLY files the spec marks
+    `to_modify`, and when you do, keep every export that other files import. Never recreate an existing file.
 
 # OUTPUT
 Reply with ONE JSON object that validates against the schema below. No prose outside the JSON, no markdown fences.
