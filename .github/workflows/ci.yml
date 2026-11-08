@@ -18,6 +18,8 @@ jobs:
       - run: npm ci
       - name: Type check
         run: npm run typecheck
+      - name: Test naming convention (should_X_when_Y)
+        run: npm run lint:tests
       - name: Architecture rules (Clean Architecture dependency rule)
         run: npm run lint:arch
       - name: Tests
