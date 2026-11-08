@@ -40,6 +40,17 @@ describe('OpenRouterGateway', () => {
     await expect(act).rejects.toMatchObject({ status: 429, retryAfterSeconds: 7 });
   });
 
+  it('should_explain_privacy_fix_when_account_policy_excludes_free_endpoints', async () => {
+    // Arrange
+    const body = '{"error":{"message":"0 endpoints out of 3 requested are available matching your guardrail restrictions and data policy. ZDR violation (account settings)"}}';
+    const fakeFetch = (async () => new Response(body, { status: 404 })) as unknown as typeof fetch;
+    const gateway = new OpenRouterGateway(config, fakeFetch);
+    // Act
+    const act = gateway.complete(request);
+    // Assert
+    await expect(act).rejects.toThrow(/settings\/privacy/);
+  });
+
   it('should_refuse_request_when_a_paid_model_slips_into_the_chain', async () => {
     // Arrange
     const gateway = new OpenRouterGateway(config, (async () => new Response('{}')) as unknown as typeof fetch);
