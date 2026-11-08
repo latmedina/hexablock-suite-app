@@ -67,14 +67,16 @@ npm run lint:arch     # Clean Architecture dependency rule
 
 ## AI Usage Documentation
 
-See [AI_USAGE.md](AI_USAGE.md). Rules for AI agents: [AGENTS.md](AGENTS.md).
+See [AI_USAGE.md](AI_USAGE.md). Rules for AI agents: [AGENTS.md](AGENTS.md), plus one `AGENTS.md` per module. Module map, owners and supported tools (Claude Code, Codex, Gemini CLI, OpenRouter models): [docs/agents/README.md](docs/agents/README.md).
 
 ## Contributing
 
 - Branches: `main` (releases, protected), `develop` (integration, protected), `dev/<member>` (personal work).
 - Open a PR from `dev/<member>` to `develop` at least every 2–3 days; one approval from another member and green CI are required. Squash merge.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org) in English, validated by commitlint, e.g. `feat(engine): add generic HexBoard with axial coordinates`.
-- Each feature starts from a spec in `docs/specs/`.
+- Each feature starts from a spec in `docs/specs/`; status of every requirement in [docs/specs/REQUIREMENTS.md](docs/specs/REQUIREMENTS.md).
+- Test names follow `should_<expected>_when_<condition>` (`npm run lint:tests`).
+- Module owners review changes to their module ([CODEOWNERS](.github/CODEOWNERS)).
 
 ## License
 
