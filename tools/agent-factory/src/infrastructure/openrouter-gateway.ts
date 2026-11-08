@@ -62,7 +62,10 @@ export class OpenRouterGateway implements ILlmGateway {
     if (!res.ok || json.error) {
       const status = res.ok ? (json.error?.code ?? 500) : res.status;
       const retryAfter = Number(res.headers.get('retry-after'));
-      throw new LlmHttpError(status, `OpenRouter ${status}: ${json.error?.message ?? text.slice(0, 300)}`, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
+      const detail = json.error?.message ?? text.slice(0, 300);
+      // Account-wide privacy settings (ZDR, no training) exclude every free endpoint: say how to fix it.
+      const hint = /data policy|ZDR/i.test(detail) ? ' -> Free models need https://openrouter.ai/settings/privacy: turn off "ZDR Endpoints Only" and allow free endpoints.' : '';
+      throw new LlmHttpError(status, `OpenRouter ${status}: ${detail}${hint}`, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
     }
 
     const content = json.choices?.[0]?.message?.content;
