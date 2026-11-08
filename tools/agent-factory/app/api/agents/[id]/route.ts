@@ -1,0 +1,34 @@
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { AGENT_IDS } from '../../../../src/domain/agent';
+import { isPathInsideModule, MODULE_KEYS } from '../../../../src/domain/modules';
+import { AgentFactory } from '../../../../src/main/agent-factory';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const Body = z.object({ prompt: z.string().min(1).max(60000), module: z.enum(MODULE_KEYS).optional() });
+
+/** POST /api/agents/<id>  { "prompt": "...", "module": "app/domain-core" }  -> runs one agent. Used by n8n. */
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  const agentId = z.enum(AGENT_IDS).safeParse(id);
+  if (!agentId.success) return NextResponse.json({ error: `Unknown agent "${id}". Known: ${AGENT_IDS.join(', ')}` }, { status: 404 });
+  const body = Body.safeParse(await req.json().catch(() => null));
+  if (!body.success) return NextResponse.json({ error: 'Body must be { "prompt": string, "module"?: ModuleKey }' }, { status: 400 });
+
+  try {
+    const factory = AgentFactory.fromEnv();
+    const result = await factory.create(agentId.data).execute({ userPrompt: body.data.prompt, moduleKey: body.data.module });
+    const moduleKey = body.data.module;
+    const output = result.output as { files?: Array<{ path: string }> };
+    const outside = moduleKey && output.files ? output.files.map((f) => f.path).filter((p) => !isPathInsideModule(moduleKey, p)) : [];
+    if (outside.length > 0) {
+      return NextResponse.json({ error: 'ModuleBoundaryError', message: `Agent wrote outside module "${moduleKey}"`, paths: outside, output: result.output }, { status: 422 });
+    }
+    return NextResponse.json({ runId: factory.runId, agent: result.agentId, model: result.modelUsed, attempts: result.attempts, output: result.output });
+  } catch (error) {
+    const err = error as Error;
+    return NextResponse.json({ error: err.name, message: err.message }, { status: 502 });
+  }
+}
