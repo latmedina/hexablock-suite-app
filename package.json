@@ -28,7 +28,8 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "lint:arch": "depcruise src --config .dependency-cruiser.js",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lint:tests": "node scripts/check-test-names.mjs test"
   },
   "private": true,
   "description": "HexaBlock Suite: four hexagonal puzzle games on one generic engine",
