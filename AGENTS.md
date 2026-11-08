@@ -20,6 +20,13 @@ having four games. Full assignment: see `docs/specs/` and the team plan.
 
 `npm run lint:arch` (dependency-cruiser) fails the build on any violation.
 
+## Modules and module rules
+
+Each module folder has its own `AGENTS.md` (and a `CLAUDE.md` that imports it). Read the one of the
+folder you are working in before changing it. Module map, owners and which AI tool to use for what:
+[`docs/agents/README.md`](docs/agents/README.md). Hex coordinate conventions live only in
+[`src/domain/AGENTS.md`](src/domain/AGENTS.md).
+
 ## Rules
 
 1. Never add `if`/`switch` on the variant inside `src/domain/engine`, `board`, `geometry` or any use case.
@@ -36,8 +43,12 @@ having four games. Full assignment: see `docs/specs/` and the team plan.
 7. Commits: Conventional Commits in English with an allowed scope (see `commitlint.config.js`).
 8. Implement from a spec in `docs/specs/`. If there is no spec, write or ask for one first.
 9. Never put secrets, `.env` contents or user data in code, prompts or logs.
+10. Work only on `dev/<name>` branches and open a PR to `develop`; never commit to `main` or `develop`.
+11. Never invent classes, methods or API endpoints. If it is not in the code or in a spec, ask.
+12. Stay inside the module of your task; touching another owner's module needs their review.
+13. Do not commit agent reports or scratch files (`*_SUMMARY.md`, `*_IMPLEMENTATION.md`, notes).
 
 ## Before finishing
 
-Run `npm run typecheck && npm run lint:arch && npm test`. Tell the human which parts you generated
+Run `npm run typecheck && npm run lint:tests && npm run lint:arch && npm test`. Tell the human which parts you generated
 so they can log it in `AI_USAGE.md`.

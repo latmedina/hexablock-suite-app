@@ -1,0 +1,25 @@
+# Review ownership per module. See docs/agents/README.md for the module map.
+# Later rules win over earlier ones.
+
+*                                   @latmedina
+
+# I1 — engine and architecture
+/src/domain/                        @latmedina
+/src/application/                   @latmedina
+/src/main/                          @latmedina
+/docs/EXTENSIBILITY.md              @latmedina
+
+# I2 — level-based variants and content
+/src/domain/variants/hexa-fit/      @Arnoldo182
+/src/domain/variants/hexa-sort/     @Arnoldo182
+/assets/levels/                     @Arnoldo182
+/src/adapters/level-builder/        @Arnoldo182
+/src/infrastructure/i18n/           @Arnoldo182
+
+# I3 — integration, persistence, audio, CI
+/src/infrastructure/storage/        @luisloaiza2
+/src/infrastructure/http/           @luisloaiza2
+/src/infrastructure/audio/          @luisloaiza2
+/src/adapters/repositories/         @luisloaiza2
+/test/contract/                     @luisloaiza2
+/.github/                           @luisloaiza2 @latmedina

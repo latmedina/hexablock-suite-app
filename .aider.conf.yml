@@ -1,0 +1,5 @@
+# Aider (works with OpenRouter models: aider --model openrouter/<provider>/<model>).
+# The API key comes from the OPENROUTER_API_KEY environment variable, never from this file.
+read:
+  - AGENTS.md
+auto-commits: false
