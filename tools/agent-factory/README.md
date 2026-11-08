@@ -12,8 +12,8 @@ dependency-cruiser runs.
 | --- | --- | --- | --- |
 | `router` | Classifies a request into package P1–P10, module and agent chain | `nvidia/nemotron-3.5-lightning:free` | super-vl |
 | `architect` | Agent 1: request → validated spec (interfaces, rules, `should_x_when_y` tests) | `nvidia/nemotron-3-ultra-550b-a55b:free` | dots-3-note, super-vl |
-| `dev-app` | Agent 2 (app): spec → complete files inside the module | `cohere/north-mini-code:free` | super-vl, nemotron-ultra |
-| `dev-api` | Agent 2 (api, NestJS/Prisma) | `cohere/north-mini-code:free` | super-vl, nemotron-ultra |
+| `dev-app` | Agent 2 (app): spec → complete files inside the module | `nvidia/nemotron-3-ultra-550b-a55b:free` | super-vl, north-mini-code |
+| `dev-api` | Agent 2 (api, NestJS/Prisma) | `nvidia/nemotron-3-ultra-550b-a55b:free` | super-vl, north-mini-code |
 | `qa` | Adds missing tests under `test/` only | `nvidia/nemotron-3.5-super-vl:free` | nano-omni-reasoning, north-mini-code |
 | `reviewer` | Reviews patch vs spec, layers, SOLID, patterns (different family from Dev) | `dots-studio/dots-3-note-preview:free` | nemotron-ultra, flint |
 | `level-designer` | Solvable Hexa Fit / Hexa Sort level JSON | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | super-vl |
@@ -29,7 +29,8 @@ is appended to its system prompt automatically, and the root + module `AGENTS.md
   right before each request. `npm run models:check` verifies live against `/api/v1/models` that each configured
   model still exists with price 0.
 - **Validated output.** Each reply is parsed and validated with zod; one repair turn, then a hard error.
-- **Module boundary.** A Dev patch that writes outside the spec's module is rejected (`ModuleBoundaryError`).
+- **Module boundary.** A Dev patch that writes outside the spec's module, or replaces an existing file the spec did not mark `to_modify`, goes back to the agent once and then fails.
+- **Real context.** The Architect sees the file tree of both repos; the Dev sees the current content of every file the spec references.
 - **Nothing is written to the repo.** You get a spec and a patch; a human reviews and commits on `dev/<name>`.
 - **Rate limits.** OpenRouter falls back through the free chain (`models`); 429/5xx are retried with backoff.
 - **Traceability.** Every run is appended to `.runs/runs.jsonl` (agent, model, prompt) for `AI_USAGE.md`.
@@ -59,3 +60,15 @@ URLs), and keep the OpenRouter key in this app's env, not in n8n.
 
 Free endpoints are rate limited and may log prompts or use them for training: never send secrets, `.env` files or
 user data. The free catalogue changes often; the list in `agents.config.ts` was checked on 2026-11-08.
+
+## n8n over Tailscale
+
+n8n runs on another machine, so the app must listen on the network. Then set a token:
+
+```bash
+FACTORY_TOKEN=$(openssl rand -hex 24)   # keep it in .env.local, never in the repo
+npx next dev --port 3100 -H <this-machine-tailscale-ip>
+```
+
+Import `n8n/architect-to-dev.workflow.json` after replacing `127.0.0.1` with this machine's Tailscale name and
+`__FACTORY_TOKEN__` with the token. Protect the n8n webhook itself with Header Auth.
