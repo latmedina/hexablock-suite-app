@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { AGENT_IDS } from '../../../../src/domain/agent';
 import { isPathInsideModule, MODULE_KEYS } from '../../../../src/domain/modules';
+import { isAuthorized } from '../../../../src/infrastructure/auth';
 import { AgentFactory } from '../../../../src/main/agent-factory';
 
 export const runtime = 'nodejs';
@@ -11,6 +12,7 @@ const Body = z.object({ prompt: z.string().min(1).max(60000), module: z.enum(MOD
 
 /** POST /api/agents/<id>  { "prompt": "...", "module": "app/domain-core" }  -> runs one agent. Used by n8n. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await ctx.params;
   const agentId = z.enum(AGENT_IDS).safeParse(id);
   if (!agentId.success) return NextResponse.json({ error: `Unknown agent "${id}". Known: ${AGENT_IDS.join(', ')}` }, { status: 404 });

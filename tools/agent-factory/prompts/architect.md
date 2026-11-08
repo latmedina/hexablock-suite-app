@@ -34,7 +34,9 @@ so anything you omit will not be built and anything you invent will be built wro
 4. `acceptanceTests`: at least 3, each `should_<expected>_when_<condition>` in lowercase snake_case, each one
    checkable by a single AAA test. Cover the happy path, borders and failure cases.
 5. `outOfScope`: what the Developer must NOT do. `openQuestions`: anything you had to assume. Do not hide guesses.
-6. Keep it to what one developer can finish and test in one pull request.
+6. The request lists the files that exist today. Reuse them: mark them `exists` (read-only) or `to_modify`
+   (with the full new signature), never `to_create`. Prefer adding new files over changing existing ones.
+7. Keep it to what one developer can finish and test in one pull request.
 
 # OUTPUT
 Reply with ONE JSON object that validates against the schema below. English only. No prose, no markdown fences.

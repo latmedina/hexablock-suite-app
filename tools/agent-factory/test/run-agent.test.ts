@@ -51,3 +51,25 @@ describe('RunAgent', () => {
     expect(system).toContain('acceptanceTests');
   });
 });
+
+describe('extractJson', () => {
+  it('should_parse_reply_when_string_contains_raw_newlines', async () => {
+    // Arrange
+    const { extractJson } = await import('../src/application/json-output');
+    const raw = '{"files":[{"path":"a.ts","content":"line1\nline2\tend"}]}';
+    // Act
+    const json = extractJson(raw) as { files: Array<{ content: string }> };
+    // Assert
+    expect(json.files[0]?.content).toBe('line1\nline2\tend');
+  });
+
+  it('should_parse_object_when_content_contains_inner_code_fences', async () => {
+    // Arrange
+    const { extractJson } = await import('../src/application/json-output');
+    const raw = '{"content":"```ts\\nconst a = 1;\\n```"}';
+    // Act
+    const json = extractJson(raw) as { content: string };
+    // Assert
+    expect(json.content).toContain('const a = 1;');
+  });
+});

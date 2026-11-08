@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { isAuthorized } from '../../../src/infrastructure/auth';
 import { AgentFactory } from '../../../src/main/agent-factory';
 
 export const runtime = 'nodejs';
@@ -9,6 +10,7 @@ const Body = z.object({ request: z.string().min(10).max(8000) });
 
 /** POST /api/pipeline  { "request": "..." }  -> Architect (agent 1) -> Dev (agent 2). Returns spec + patch. */
 export async function POST(req: Request) {
+  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Body must be { "request": string (10..8000 chars) }' }, { status: 400 });
 

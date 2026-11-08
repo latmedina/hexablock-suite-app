@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { LoggedAgent } from '../application/aspects/logged-agent';
+import { FallbackLlmGateway } from '../application/aspects/fallback-gateway';
 import { RetryingLlmGateway } from '../application/aspects/retry-gateway';
 import { ArchitectToDevPipeline, type Runnable } from '../application/pipeline';
-import type { IClock, ILlmGateway, IPromptRepository, IRunLog } from '../application/ports';
+import type { IClock, ILlmGateway, IPromptRepository, IRepoFiles, IRunLog } from '../application/ports';
 import { RunAgent } from '../application/run-agent';
 import type { AgentId } from '../domain/agent';
 import { loadAgentDefinitions, type AgentDefinitions, type AgentOutputs } from '../config/agents.config';
 import { readEnv } from '../config/env';
 import { FsPromptRepository } from '../infrastructure/fs-prompt-repository';
+import { FsRepoFiles } from '../infrastructure/fs-repo-files';
 import { JsonlRunLog } from '../infrastructure/jsonl-run-log';
 import { OpenRouterGateway } from '../infrastructure/openrouter-gateway';
 
@@ -21,6 +23,7 @@ export class AgentFactory {
     private readonly llm: ILlmGateway,
     private readonly prompts: IPromptRepository,
     private readonly log: IRunLog,
+    private readonly files: IRepoFiles,
     private readonly clock: IClock = { now: () => new Date() },
     readonly runId: string = randomUUID(),
   ) {}
@@ -31,14 +34,17 @@ export class AgentFactory {
   }
 
   architectToDev(): ArchitectToDevPipeline {
-    return new ArchitectToDevPipeline(this.create('architect'), (repo) => this.create(repo === 'app' ? 'dev-app' : 'dev-api'));
+    return new ArchitectToDevPipeline(this.create('architect'), (repo) => this.create(repo === 'app' ? 'dev-app' : 'dev-api'), this.files);
   }
 
   static fromEnv(env: Readonly<Record<string, string | undefined>> = process.env): AgentFactory {
     const cfg = readEnv(env);
-    const gateway = new RetryingLlmGateway(
-      new OpenRouterGateway({ apiKey: cfg.openRouterApiKey, baseUrl: cfg.openRouterBaseUrl, appUrl: 'https://github.com/latmedina/hexablock-suite-app', appTitle: 'HexaBlock Agent Factory', timeoutMs: cfg.timeoutMs }),
+    const gateway = new FallbackLlmGateway(
+      new RetryingLlmGateway(
+        new OpenRouterGateway({ apiKey: cfg.openRouterApiKey, baseUrl: cfg.openRouterBaseUrl, appUrl: 'https://github.com/latmedina/hexablock-suite-app', appTitle: 'HexaBlock Agent Factory', timeoutMs: cfg.timeoutMs }),
+      ),
     );
-    return new AgentFactory(loadAgentDefinitions(env), gateway, new FsPromptRepository(cfg.promptsDir, { app: cfg.appRepoRoot, api: cfg.apiRepoRoot }), new JsonlRunLog(cfg.runsDir));
+    const roots = { app: cfg.appRepoRoot, api: cfg.apiRepoRoot };
+    return new AgentFactory(loadAgentDefinitions(env), gateway, new FsPromptRepository(cfg.promptsDir, roots), new JsonlRunLog(cfg.runsDir), new FsRepoFiles(roots));
   }
 }

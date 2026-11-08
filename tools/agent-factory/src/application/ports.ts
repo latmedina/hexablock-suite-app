@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../domain/agent';
 import type { FreeModelId } from '../domain/free-model';
-import type { ModuleKey } from '../domain/modules';
+import type { ModuleKey, RepoKey } from '../domain/modules';
 
 export interface LlmRequest {
   readonly models: readonly FreeModelId[];
@@ -24,6 +24,14 @@ export interface ILlmGateway {
 export interface IPromptRepository {
   systemPrompt(promptFile: string): Promise<string>;
   moduleContext(moduleKey: ModuleKey): Promise<string>;
+}
+
+/** Port to the current content of the two repos, so agents build on what exists instead of guessing. */
+export interface IRepoFiles {
+  exists(repo: RepoKey, path: string): Promise<boolean>;
+  read(repo: RepoKey, path: string): Promise<string | undefined>;
+  /** Repo-relative paths of files under the given folders (sorted, capped). */
+  list(repo: RepoKey, folders: readonly string[], limit?: number): Promise<string[]>;
 }
 
 export interface AgentRunRecord {
