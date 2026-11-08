@@ -1,0 +1,61 @@
+# HexaBlock Agent Factory
+
+Role-based AI agents for building HexaBlock Suite, running **only on free OpenRouter models** and orchestrated by a
+small Next.js app (plain `fetch`, OpenAI-compatible API). Optional n8n workflow included.
+
+This is a development tool. It is not part of the mobile app and is excluded from the app's `tsconfig`, Jest and
+dependency-cruiser runs.
+
+## Agents
+
+| Id | Role | Primary free model | Fallbacks |
+| --- | --- | --- | --- |
+| `router` | Classifies a request into package P1–P10, module and agent chain | `nvidia/nemotron-3.5-lightning:free` | super-vl |
+| `architect` | Agent 1: request → validated spec (interfaces, rules, `should_x_when_y` tests) | `nvidia/nemotron-3-ultra-550b-a55b:free` | dots-3-note, super-vl |
+| `dev-app` | Agent 2 (app): spec → complete files inside the module | `cohere/north-mini-code:free` | super-vl, nemotron-ultra |
+| `dev-api` | Agent 2 (api, NestJS/Prisma) | `cohere/north-mini-code:free` | super-vl, nemotron-ultra |
+| `qa` | Adds missing tests under `test/` only | `nvidia/nemotron-3.5-super-vl:free` | nano-omni-reasoning, north-mini-code |
+| `reviewer` | Reviews patch vs spec, layers, SOLID, patterns (different family from Dev) | `dots-studio/dots-3-note-preview:free` | nemotron-ultra, flint |
+| `level-designer` | Solvable Hexa Fit / Hexa Sort level JSON | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | super-vl |
+| `docs` | README, Mermaid diagrams, EXTENSIBILITY.md, i18n | `google/gemma-4-31b-it:free` | super-vl, gemma-4-26b |
+
+Models are chosen in one file: [`src/config/agents.config.ts`](src/config/agents.config.ts). Prompts live in
+[`prompts/`](prompts/). The JSON Schema of each agent's output contract ([`src/domain/contracts.ts`](src/domain/contracts.ts))
+is appended to its system prompt automatically, and the root + module `AGENTS.md` are injected for agents that write code.
+
+## Guarantees
+
+- **Free only.** Every model id must end in `:free`; anything else throws `PaidModelError` at startup and again
+  right before each request. `npm run models:check` verifies live against `/api/v1/models` that each configured
+  model still exists with price 0.
+- **Validated output.** Each reply is parsed and validated with zod; one repair turn, then a hard error.
+- **Module boundary.** A Dev patch that writes outside the spec's module is rejected (`ModuleBoundaryError`).
+- **Nothing is written to the repo.** You get a spec and a patch; a human reviews and commits on `dev/<name>`.
+- **Rate limits.** OpenRouter falls back through the free chain (`models`); 429/5xx are retried with backoff.
+- **Traceability.** Every run is appended to `.runs/runs.jsonl` (agent, model, prompt) for `AI_USAGE.md`.
+
+## Use
+
+```bash
+cd tools/agent-factory
+npm install
+cp .env.example .env.local      # add OPENROUTER_API_KEY
+npm run models:check            # are the configured models still free and online?
+npm run dev                     # http://localhost:3100  (form: Architect -> Dev)
+npm run pipeline -- "Implement HexBoard<TCell> as in docs/specs/P2-hex-geometry.md"
+```
+
+HTTP API: `POST /api/pipeline {"request": "..."}` and `POST /api/agents/<id> {"prompt": "...", "module": "app/hexa-fit"}`.
+
+Swap a model without code changes: `AGENT_REVIEWER_MODELS="google/gemma-4-31b-it:free,recursive/flint-v1.0:free"`.
+
+## n8n (optional)
+
+Import [`n8n/architect-to-dev.workflow.json`](n8n/architect-to-dev.workflow.json). It calls this app's
+`/api/agents/architect` then `/api/agents/dev-app|dev-api`. Run the app on the same server as n8n (or change the
+URLs), and keep the OpenRouter key in this app's env, not in n8n.
+
+## Free-tier caveats
+
+Free endpoints are rate limited and may log prompts or use them for training: never send secrets, `.env` files or
+user data. The free catalogue changes often; the list in `agents.config.ts` was checked on 2026-11-08.
