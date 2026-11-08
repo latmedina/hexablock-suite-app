@@ -51,6 +51,17 @@ describe('OpenRouterGateway', () => {
     await expect(act).rejects.toThrow(/settings\/privacy/);
   });
 
+  it('should_throw_non_retryable_error_when_reply_is_cut_at_max_tokens', async () => {
+    // Arrange
+    const body = JSON.stringify({ model: 'cohere/north-mini-code:free', choices: [{ message: { content: '{"a": "trunc' }, finish_reason: 'length' }] });
+    const fakeFetch = (async () => new Response(body, { status: 200 })) as unknown as typeof fetch;
+    const gateway = new OpenRouterGateway(config, fakeFetch);
+    // Act
+    const act = gateway.complete(request);
+    // Assert
+    await expect(act).rejects.toMatchObject({ status: 422 });
+  });
+
   it('should_refuse_request_when_a_paid_model_slips_into_the_chain', async () => {
     // Arrange
     const gateway = new OpenRouterGateway(config, (async () => new Response('{}')) as unknown as typeof fetch);

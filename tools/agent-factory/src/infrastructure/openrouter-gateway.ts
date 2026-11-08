@@ -37,6 +37,8 @@ export class OpenRouterGateway implements ILlmGateway {
       messages: request.messages,
       temperature: request.temperature,
       max_tokens: request.maxTokens,
+      // Reasoning tokens still count against max_tokens; keep them out of the reply so it stays pure JSON.
+      reasoning: { exclude: true },
     };
 
     const res = await this.fetchFn(`${this.config.baseUrl}/chat/completions`, {
@@ -68,6 +70,12 @@ export class OpenRouterGateway implements ILlmGateway {
       throw new LlmHttpError(status, `OpenRouter ${status}: ${detail}${hint}`, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
     }
 
+    const finish = json.choices?.[0]?.finish_reason;
+    if (finish === 'length') {
+      // A cut-off JSON reply is never usable. 422 is not retried on the same model; the fallback gateway
+      // moves on to the next free model.
+      throw new LlmHttpError(422, `OpenRouter reply from ${json.model ?? primary} was cut off at max_tokens=${request.maxTokens} (finish_reason=length).`);
+    }
     const content = json.choices?.[0]?.message?.content;
     if (!content) {
       throw new LlmHttpError(502, `OpenRouter returned an empty reply (finish_reason=${json.choices?.[0]?.finish_reason ?? 'unknown'}). Raise maxTokens if it was "length".`);
