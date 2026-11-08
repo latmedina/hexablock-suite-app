@@ -7,6 +7,8 @@ import type { ILlmGateway, IPromptRepository } from './ports';
 export interface RunAgentInput {
   readonly userPrompt: string;
   readonly moduleKey?: ModuleKey;
+  /** Extra domain checks on a schema-valid output; returned issues trigger the repair turn. */
+  readonly check?: (output: unknown) => readonly string[];
 }
 
 export class AgentOutputError extends Error {
@@ -42,14 +44,16 @@ export class RunAgent<TOut> {
     let lastRaw = '';
     while (attempts < 2) {
       attempts += 1;
+      // The repair turn starts from the next model: the one that just failed is the least likely to fix it.
+      const models = attempts === 1 ? this.definition.models : [...this.definition.models.slice(1), ...this.definition.models.slice(0, 1)];
       const response = await this.llm.complete({
-        models: this.definition.models,
+        models,
         messages,
         temperature: this.definition.temperature,
         maxTokens: this.definition.maxTokens,
       });
       lastRaw = response.content;
-      const parsed = this.parse(response.content);
+      const parsed = this.parse(response.content, input.check);
       if (parsed.success) {
         return { agentId: this.definition.id, modelUsed: response.modelUsed, output: parsed.data, raw: response.content, attempts, usage: response.usage };
       }
@@ -73,7 +77,7 @@ export class RunAgent<TOut> {
     return parts.join('\n\n');
   }
 
-  private parse(raw: string): { success: true; data: TOut } | { success: false; issues: string } {
+  private parse(raw: string, check?: RunAgentInput['check']): { success: true; data: TOut } | { success: false; issues: string } {
     let json: unknown;
     try {
       json = extractJson(raw);
@@ -81,7 +85,10 @@ export class RunAgent<TOut> {
       return { success: false, issues: `not valid JSON (${(error as Error).message})` };
     }
     const result = this.definition.output.safeParse(json);
-    if (result.success) return { success: true, data: result.data };
+    if (result.success) {
+      const issues = check?.(result.data) ?? [];
+      return issues.length === 0 ? { success: true, data: result.data } : { success: false, issues: issues.join('; ') };
+    }
     return { success: false, issues: result.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ') };
   }
 }

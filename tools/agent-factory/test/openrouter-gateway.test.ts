@@ -85,3 +85,28 @@ describe('RetryingLlmGateway', () => {
     await expect(act).rejects.toMatchObject({ status: 401 });
   });
 });
+
+describe('FallbackLlmGateway', () => {
+  it('should_try_next_model_alone_when_chained_call_fails', async () => {
+    // Arrange
+    const { FallbackLlmGateway } = await import('../src/application/aspects/fallback-gateway');
+    const inner = new ScriptedLlm([new LlmHttpError(502, 'empty reply'), 'ok']);
+    const gateway = new FallbackLlmGateway(inner);
+    // Act
+    const result = await gateway.complete(request);
+    // Assert
+    expect(result.content).toBe('ok');
+    expect(inner.requests[1]?.models).toEqual(['nvidia/nemotron-3.5-super-vl:free']);
+  });
+
+  it('should_rethrow_last_error_when_every_model_fails', async () => {
+    // Arrange
+    const { FallbackLlmGateway } = await import('../src/application/aspects/fallback-gateway');
+    const inner = new ScriptedLlm([new LlmHttpError(502, 'first'), new LlmHttpError(404, 'last')]);
+    const gateway = new FallbackLlmGateway(inner);
+    // Act
+    const act = gateway.complete(request);
+    // Assert
+    await expect(act).rejects.toMatchObject({ status: 404 });
+  });
+});

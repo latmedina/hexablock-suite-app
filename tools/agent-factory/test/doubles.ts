@@ -1,5 +1,5 @@
-import type { ILlmGateway, IPromptRepository, IRunLog, AgentRunRecord, LlmRequest, LlmResponse } from '../src/application/ports';
-import type { ModuleKey } from '../src/domain/modules';
+import type { ILlmGateway, IPromptRepository, IRepoFiles, IRunLog, AgentRunRecord, LlmRequest, LlmResponse } from '../src/application/ports';
+import type { ModuleKey, RepoKey } from '../src/domain/modules';
 
 export class ScriptedLlm implements ILlmGateway {
   readonly requests: LlmRequest[] = [];
@@ -48,3 +48,20 @@ export const validPatch = (path = 'src/domain/geometry/HexGeometry.ts') => ({
   notes: 'done',
   assumptions: [],
 });
+
+export class InMemoryRepoFiles implements IRepoFiles {
+  constructor(private readonly files: Record<string, string> = {}) {}
+  async exists(repo: RepoKey, path: string) {
+    return `${repo}:${path}` in this.files;
+  }
+  async read(repo: RepoKey, path: string) {
+    return this.files[`${repo}:${path}`];
+  }
+  async list(repo: RepoKey, folders: readonly string[]) {
+    return Object.keys(this.files)
+      .filter((k) => k.startsWith(`${repo}:`))
+      .map((k) => k.slice(repo.length + 1))
+      .filter((p) => folders.some((f) => (f.endsWith('/') ? p.startsWith(f) : p === f)))
+      .sort();
+  }
+}
