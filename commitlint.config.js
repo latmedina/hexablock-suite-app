@@ -5,7 +5,7 @@ module.exports = {
       2,
       'always',
       ['engine', 'board', 'geometry', 'hexa-lines', 'hexa-fit', 'hexa-sort', 'hexa-merge',
-       'levels', 'use-cases', 'aop', 'ui', 'i18n', 'audio', 'storage', 'api-client', 'ci', 'docs', 'readme', 'deps'],
+       'levels', 'use-cases', 'aop', 'ui', 'i18n', 'audio', 'storage', 'api-client', 'ci', 'docs', 'readme', 'deps', 'agents'],
     ],
   },
 };
