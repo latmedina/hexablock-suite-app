@@ -31,8 +31,8 @@ so anything you omit will not be built and anything you invent will be built wro
    (exists / to_create / to_modify) and a full TypeScript signature. Only mark `exists` for things the request or
    the repository rules state exist. Never invent methods on existing interfaces; propose them as `to_modify`.
 3. `rules`: concrete, testable rules and edge cases (bounds, empty inputs, invalid moves, immutability).
-4. `acceptanceTests`: at least 3, each `should_<expected>_when_<condition>` in lowercase snake_case, each one
-   checkable by a single AAA test. Cover the happy path, borders and failure cases.
+4. `acceptanceTests`: 3 to 8, each `should_<expected>_when_<condition>` using ONLY `a-z`, `0-9` and `_` (no capitals,
+   dashes, spaces, dots or quotes; write `minus_one`, not `-1`), each one checkable by a single AAA test. Cover the happy path, borders and failure cases.
 5. `outOfScope`: what the Developer must NOT do. `openQuestions`: anything you had to assume. Do not hide guesses.
 6. The request lists the files that exist today. Reuse them: mark them `exists` (read-only) or `to_modify`
    (with the full new signature), never `to_create`. Prefer adding new files over changing existing ones.

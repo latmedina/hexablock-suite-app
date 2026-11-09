@@ -25,6 +25,8 @@ export interface AgentDefinition<TOut = unknown> {
   readonly maxTokens: number;
   /** Per-call time limit; overrides OPENROUTER_TIMEOUT_MS so a stalled free model fails over sooner. */
   readonly timeoutMs?: number;
+  /** Replies the agent may give before it fails (each correction led by the next model). Default 2. */
+  readonly maxAttempts?: number;
   /** Load root + module AGENTS.md of the target module into the system prompt. */
   readonly needsModuleContext: boolean;
 }
