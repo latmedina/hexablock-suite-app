@@ -89,7 +89,7 @@ export type FactoryEvent =
   | { readonly type: 'step.started'; readonly runId: string; readonly at: string; readonly step: StepId; readonly round: number; readonly agentId?: string; readonly models?: readonly string[] }
   | { readonly type: 'step.attempt'; readonly runId: string; readonly at: string; readonly step: StepId; readonly round: number; readonly attempt: number; readonly model: string; readonly ok: boolean; readonly issues?: string; readonly durationMs: number; readonly usage?: { promptTokens: number; completionTokens: number } }
   | { readonly type: 'step.finished'; readonly runId: string; readonly at: string; readonly step: StepId; readonly round: number; readonly ok: boolean; readonly durationMs: number; readonly model?: string; readonly attempts?: number; readonly error?: string; readonly data?: unknown }
-  | { readonly type: 'run.finished'; readonly runId: string; readonly at: string; readonly ok: boolean; readonly durationMs: number; readonly error?: string; readonly verified?: boolean; readonly verdict?: string };
+  | { readonly type: 'run.finished'; readonly runId: string; readonly at: string; readonly ok: boolean; readonly durationMs: number; readonly error?: string; readonly verified?: boolean; readonly verdict?: string; readonly status?: 'ready' | 'needs_human' };
 
 /** Distributive Omit, so each event variant keeps its own fields. */
 export type FactoryEventInput = FactoryEvent extends infer E ? (E extends FactoryEvent ? Omit<E, 'runId' | 'at'> : never) : never;

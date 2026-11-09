@@ -27,7 +27,7 @@ export function readEnv(env: Readonly<Record<string, string | undefined>> = proc
     promptsDir: path.resolve(cwd, 'prompts'),
     timeoutMs: Number(env.OPENROUTER_TIMEOUT_MS ?? 180_000),
     verifyPatches: env.VERIFY_PATCHES !== '0',
-    maxRepairRounds: Math.max(0, Number(env.MAX_REPAIR_ROUNDS ?? 2)),
+    maxRepairRounds: Math.max(0, Number(env.MAX_REPAIR_ROUNDS ?? 3)),
     reviewPatches: env.REVIEW_PATCHES !== '0',
   };
 }

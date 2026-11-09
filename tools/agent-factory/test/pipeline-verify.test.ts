@@ -97,4 +97,31 @@ describe('Pipeline verification and repair', () => {
     await expect(act).rejects.toThrow();
     expect(events.at(-1)).toMatchObject({ type: 'run.finished', ok: false });
   });
+
+  it('should_send_blocking_review_findings_to_dev_when_checks_pass', async () => {
+    // Arrange
+    const blocking = { verdict: 'request_changes', summary: 'Rotation yields -0.', findings: [{ severity: 'blocker', file: 'src/domain/geometry/HexGeometry.ts', rule: 'Correctness', message: 'rotate returns -0', suggestion: 'normalise -0 to 0' }] };
+    const verifier = new ScriptedVerifier([passed, passed]);
+    const { llm, factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(blocking), JSON.stringify(validPatch()), JSON.stringify(review)], { verifier, review: true });
+    // Act
+    const result = await factory.architectToDev().run('Implement hex geometry');
+    // Assert
+    expect(result.repairRounds).toBe(1);
+    expect(llm.requests[3]?.messages[1]?.content).toContain('REVIEW FINDINGS');
+    expect(llm.requests[3]?.messages[1]?.content).toContain('normalise -0 to 0');
+    expect(result.review?.output.verdict).toBe('approve');
+    expect(result.status).toBe('ready');
+  });
+
+  it('should_mark_run_needs_human_when_checks_still_fail_after_all_rounds', async () => {
+    // Arrange
+    const verifier = new ScriptedVerifier([failed, failed]);
+    const { events, factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch()), JSON.stringify(review)], { verifier, maxRepairRounds: 1, review: true });
+    // Act
+    const result = await factory.architectToDev().run('Implement hex geometry');
+    // Assert
+    expect(result.status).toBe('needs_human');
+    expect(result.review?.output.verdict).toBe('approve');
+    expect(events.at(-1)).toMatchObject({ type: 'run.finished', ok: true, status: 'needs_human', verified: false });
+  });
 });

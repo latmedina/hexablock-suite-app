@@ -3,6 +3,7 @@ import type { ArchitectSpec, FilePatch, ReviewReport } from '../domain/contracts
 import { removedExports } from '../domain/exports';
 import { isPathInsideModule, MODULES, type RepoKey } from '../domain/modules';
 import type { IPatchVerifier, IRepoFiles, IRunEvents, StepId, VerifyReport } from './ports';
+import { describeFailures } from './check-failures';
 import { NO_EVENTS, RunEvents } from './run-events';
 import type { RunAgentInput } from './run-agent';
 
@@ -43,7 +44,11 @@ export interface ArchitectToDevResult {
   /** Present when a reviewer is configured and answered; reviewError when it did not. */
   readonly review?: AgentRunResult<ReviewReport>;
   readonly reviewError?: string;
+  /** ready: passed every check and the reviewer found nothing blocking. needs_human: a person must fix it. */
+  readonly status: RunStatus;
 }
+
+export type RunStatus = 'ready' | 'needs_human';
 
 export interface PipelineOptions {
   /** Applies the patch to a throwaway copy of the repo and runs tsc/jest/lint. */
@@ -57,7 +62,6 @@ export interface PipelineOptions {
 }
 
 const MAX_CONTEXT_FILE_CHARS = 12_000;
-const MAX_CHECK_OUTPUT_FOR_DEV = 6_000;
 
 /**
  * Agent 1 -> Agent 2 -> verification -> review. The Architect turns a request into a validated spec, seeing the
@@ -91,6 +95,7 @@ export class ArchitectToDevPipeline {
         durationMs: Date.now() - startedAt,
         verified: result.verification?.ok,
         verdict: result.review?.output.verdict,
+        status: result.status,
       });
       return result;
     } catch (error) {
@@ -147,29 +152,51 @@ export class ArchitectToDevPipeline {
     enforceGuards(patch);
 
     let verification: VerifyReport | undefined;
-    let repairRounds = 0;
-    const { verifier } = this.options;
-    if (verifier) {
-      const maxRounds = this.options.maxRepairRounds ?? 2;
-      for (let round = 0; ; round += 1) {
-        verification = await this.verify(verifier, repo, patch.output, round);
-        if (verification.ok || round >= maxRounds) break;
-        repairRounds = round + 1;
-        patch = await this.step('dev', repairRounds, dev, { moduleKey, check: violations, userPrompt: repairPrompt(devPrompt, patch.output, verification) }, summarizePatch);
-        enforceGuards(patch);
-      }
-    }
-
     let review: AgentRunResult<ReviewReport> | undefined;
     let reviewError: string | undefined;
-    if (this.options.reviewer) {
+    let reviewedRound = -1;
+    let repairRounds = 0;
+    const { verifier, reviewer } = this.options;
+    const maxRounds = this.options.maxRepairRounds ?? 3;
+
+    const runReview = async (round: number): Promise<void> => {
+      if (!reviewer) return;
+      reviewedRound = round;
       try {
-        review = await this.step('reviewer', 0, this.options.reviewer, { moduleKey, userPrompt: reviewPrompt(spec.output, patch.output, verification) }, (out) => out);
+        review = await this.step('reviewer', round, reviewer, { moduleKey, userPrompt: reviewPrompt(spec.output, patch.output, verification) }, (out) => out);
+        reviewError = undefined;
       } catch (error) {
+        review = undefined;
         reviewError = `${(error as Error).name}: ${(error as Error).message}`;
       }
+    };
+    const repair = async (feedback: string): Promise<void> => {
+      repairRounds += 1;
+      patch = await this.step('dev', repairRounds, dev, { moduleKey, check: violations, userPrompt: repairPrompt(devPrompt, patch.output, feedback) }, summarizePatch);
+      enforceGuards(patch);
+    };
+
+    // Verify -> (repair) -> ... -> review -> (repair on blocking findings) -> verify again, within one budget.
+    for (;;) {
+      if (verifier) verification = await this.verify(verifier, repo, patch.output, repairRounds);
+      if (verification && !verification.ok) {
+        if (repairRounds >= maxRounds) break;
+        await repair(`## CHECK FAILURES (type check, tests, lint on the patched repository)\n\n${describeFailures(verification, patch.output.files)}`);
+        continue;
+      }
+      await runReview(repairRounds);
+      const blocking = review ? blockingFindings(review.output) : [];
+      if (blocking.length > 0 && repairRounds < maxRounds) {
+        await repair(`## REVIEW FINDINGS (blocking; the code passed the automatic checks)\n\n${blocking.map((f) => `- [${f.severity}] ${f.file} (${f.rule}): ${f.message}${f.suggestion ? `\n  Fix: ${f.suggestion}` : ''}`).join('\n')}`);
+        continue;
+      }
+      break;
     }
-    return { spec, patch, verification, repairRounds, review, reviewError };
+    // The checks failed for good: still get the reviewer's diagnosis of the final patch, for the human.
+    if (reviewer && reviewedRound !== repairRounds) await runReview(repairRounds);
+
+    const status: RunStatus = (verification?.ok ?? true) && !(review && blockingFindings(review.output).length > 0) ? 'ready' : 'needs_human';
+    return { spec, patch, verification, repairRounds, review, reviewError, status };
   }
 
   /** Runs one agent and reports it as a dashboard step. */
@@ -250,8 +277,7 @@ function tail(text: string, max: number): string {
   return text.length <= max ? text : `…${text.slice(-max)}`;
 }
 
-function repairPrompt(devPrompt: string, previous: FilePatch, report: VerifyReport): string {
-  const failed = report.checks.filter((c) => !c.ok);
+function repairPrompt(devPrompt: string, previous: FilePatch, feedback: string): string {
   return [
     devPrompt,
     '',
@@ -260,12 +286,16 @@ function repairPrompt(devPrompt: string, previous: FilePatch, report: VerifyRepo
     JSON.stringify(previous, null, 2),
     '```',
     '',
-    '## It was applied to a copy of the repository and these checks FAILED',
-    ...failed.map((c) => `### ${c.name}\n\`\`\`text\n${tail(c.output, Math.floor(MAX_CHECK_OUTPUT_FOR_DEV / Math.max(1, failed.length)))}\n\`\`\``),
+    feedback,
     '',
-    'Fix every error above. Reply with the FULL corrected patch (every file, complete content), not a diff.',
-    'Keep the same interfaces and acceptance test names. Relative imports must resolve from each file\'s folder.',
+    'Fix every item above. Reply with the FULL corrected patch (every file, complete content), not a diff.',
+    'Keep the same interfaces and acceptance test names.',
   ].join('\n');
+}
+
+/** Findings that send the patch back to Dev: blockers and majors. */
+function blockingFindings(review: ReviewReport): ReviewReport['findings'] {
+  return review.findings.filter((f) => f.severity === 'blocker' || f.severity === 'major');
 }
 
 function reviewPrompt(spec: ArchitectSpec, patch: FilePatch, report: VerifyReport | undefined): string {

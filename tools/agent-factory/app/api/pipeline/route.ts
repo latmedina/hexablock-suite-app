@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     await archiveRun(readEnv().runsDir, factory.runId, result).catch(() => undefined);
     return NextResponse.json({
       runId: factory.runId,
+      status: result.status,
       architect: { model: spec.modelUsed, attempts: spec.attempts, spec: spec.output },
       dev: { model: patch.modelUsed, attempts: patch.attempts, repairRounds: result.repairRounds, patch: patch.output },
       verification: verification ?? null,

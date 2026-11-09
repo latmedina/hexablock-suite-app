@@ -24,6 +24,15 @@ EXACTLY the spec you receive, in strict TypeScript, inside the module you were g
 10. Each file in `files` contains the COMPLETE file content.
 11. Existing files are listed in the request with their current content. Replace ONLY files the spec marks
     `to_modify`, and when you do, keep every export that other files import. Never recreate an existing file.
+12. Known traps that the type checker and the tests WILL catch:
+    - `noUncheckedIndexedAccess`: `arr[i]`, `record[key]` and destructured array items are `T | undefined`.
+      Check them (`if (x === undefined) ...`) or use a total lookup; never pass them where `T` is expected.
+    - Negative zero: `-0` is not `0` for Jest's `toBe`/`toEqual`. When a coordinate can be produced by negation
+      or subtraction (rotation, cube conversion, `-q - r`), normalise it (`v === 0 ? 0 : v` or `v + 0`).
+    - Relative imports resolve from the importing file's folder: `test/unit/x/y.test.ts` reaches `src/` with
+      `../../../src/...`. Count the folders.
+    - Implement members with the exact kind the interface declares (method vs property, readonly, optional).
+13. When your request contains CHECK FAILURES or REVIEW FINDINGS, fix every one of them and change nothing else.
 
 # OUTPUT
 Reply with ONE JSON object that validates against the schema below. No prose outside the JSON, no markdown fences.

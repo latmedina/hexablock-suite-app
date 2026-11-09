@@ -38,6 +38,7 @@ interface Run {
   error?: string;
   verified?: boolean;
   verdict?: string;
+  outcome?: 'ready' | 'needs_human';
   steps: Step[];
 }
 
@@ -49,7 +50,7 @@ function reduce(runs: Map<string, Run>, e: FactoryEvent): void {
   const run = runs.get(e.runId);
   if (!run) return;
   if (e.type === 'run.finished') {
-    Object.assign(run, { status: e.ok ? 'ok' : 'failed', durationMs: e.durationMs, error: e.error, verified: e.verified, verdict: e.verdict });
+    Object.assign(run, { status: e.ok ? 'ok' : 'failed', durationMs: e.durationMs, error: e.error, verified: e.verified, verdict: e.verdict, outcome: e.status });
     for (const s of run.steps) if (s.status === 'running') s.status = 'failed';
     return;
   }
@@ -161,7 +162,7 @@ export default function Dashboard() {
                     <span className={`dot ${statusClass(r.status)}`} />
                     {clock(r.startedAt)}
                     {r.source ? <span>· {r.source}</span> : null}
-                    {r.verified === false ? <span>· no compila</span> : r.verified ? <span>· verificado</span> : null}
+                    {r.outcome === 'ready' ? <span>· listo</span> : r.outcome === 'needs_human' ? <span>· necesita revisión</span> : null}
                   </span>
                   <span className="req">{r.request}</span>
                 </button>
@@ -245,6 +246,7 @@ function RunView({ run, ticking }: { run: Run; ticking: boolean }) {
           <span>· {secs(Math.max(0, elapsed))}</span>
           {run.source ? <span>· desde {run.source}</span> : null}
           {run.verified !== undefined ? <span className={`chip ${run.verified ? 'ok' : 'bad'}`}>{run.verified ? 'Compila y pasa los tests' : 'No pasa la verificación'}</span> : null}
+          {run.outcome ? <span className={`chip ${run.outcome === 'ready' ? 'ok' : 'bad'}`}>{run.outcome === 'ready' ? 'Listo para aplicar' : 'Necesita revisión humana'}</span> : null}
           {run.verdict ? <span className={`chip ${run.verdict === 'approve' ? 'ok' : 'bad'}`}>Reviewer: {run.verdict === 'approve' ? 'aprueba' : 'pide cambios'}</span> : null}
         </div>
         <div style={{ whiteSpace: 'pre-wrap' }}>{run.request}</div>
