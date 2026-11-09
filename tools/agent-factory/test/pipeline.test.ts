@@ -80,11 +80,37 @@ describe('Architect -> Dev pipeline', () => {
     // Arrange
     const files = { 'app:src/domain/geometry/HexCoord.ts': 'export type HexAxis = "q";' };
     const spec = { ...validSpec, interfaces: [{ ...validSpec.interfaces[0], file: 'src/domain/geometry/HexCoord.ts', status: 'to_modify' }] };
-    const { factory } = factoryWith([JSON.stringify(spec), JSON.stringify(validPatch('src/domain/geometry/HexCoord.ts'))], files);
+    const keeps = { ...validPatch('src/domain/geometry/HexCoord.ts'), files: [{ path: 'src/domain/geometry/HexCoord.ts', action: 'replace', content: 'export type HexAxis = "q" | "r";' }] };
+    const { factory } = factoryWith([JSON.stringify(spec), JSON.stringify(keeps)], files);
     // Act
     const result = await factory.architectToDev().run('Change HexCoord');
     // Assert
     expect(result.patch.attempts).toBe(1);
+  });
+
+  it('should_send_repair_turn_when_dev_drops_an_export_of_a_to_modify_file', async () => {
+    // Arrange
+    const files = { 'app:src/domain/geometry/HexCoord.ts': 'export type HexAxis = "q";\nexport type HexDirection = 0 | 1;' };
+    const spec = { ...validSpec, interfaces: [{ ...validSpec.interfaces[0], file: 'src/domain/geometry/HexCoord.ts', status: 'to_modify' }] };
+    const patchWith = (content: string) => JSON.stringify({ ...validPatch(), files: [{ path: 'src/domain/geometry/HexCoord.ts', action: 'replace', content }] });
+    const { llm, factory } = factoryWith([JSON.stringify(spec), patchWith('export type HexAxis = "q";'), patchWith('export type HexAxis = "q";\nexport type HexDirection = 0 | 1;')], files);
+    // Act
+    const result = await factory.architectToDev().run('Change HexCoord');
+    // Assert
+    expect(result.patch.attempts).toBe(2);
+    expect(llm.requests[2]?.messages.at(-1)?.content).toContain('you removed: HexDirection');
+  });
+
+  it('should_throw_removed_exports_error_when_dev_keeps_dropping_an_export', async () => {
+    // Arrange
+    const files = { 'app:src/domain/geometry/HexCoord.ts': 'export type HexAxis = "q";\nexport type HexDirection = 0 | 1;' };
+    const spec = { ...validSpec, interfaces: [{ ...validSpec.interfaces[0], file: 'src/domain/geometry/HexCoord.ts', status: 'to_modify' }] };
+    const dropped = JSON.stringify({ ...validPatch(), files: [{ path: 'src/domain/geometry/HexCoord.ts', action: 'replace', content: 'export type HexAxis = "q";' }] });
+    const { factory } = factoryWith([JSON.stringify(spec), dropped, dropped], files);
+    // Act
+    const act = factory.architectToDev().run('Change HexCoord');
+    // Assert
+    await expect(act).rejects.toThrow(/you removed: HexDirection/);
   });
 
   it('should_give_architect_file_tree_and_dev_current_file_content_when_files_exist', async () => {

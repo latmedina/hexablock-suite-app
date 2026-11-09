@@ -1,5 +1,6 @@
 import type { AgentRunResult } from '../domain/agent';
 import type { ArchitectSpec, FilePatch } from '../domain/contracts';
+import { removedExports } from '../domain/exports';
 import { isPathInsideModule, MODULES, type RepoKey } from '../domain/modules';
 import type { IRepoFiles } from './ports';
 import type { RunAgentInput } from './run-agent';
@@ -21,6 +22,13 @@ export class UnapprovedOverwriteError extends Error {
   constructor(readonly paths: string[]) {
     super(`Dev agent tried to replace existing files the spec did not mark "to_modify": ${paths.join(', ')}`);
     this.name = 'UnapprovedOverwriteError';
+  }
+}
+
+export class RemovedExportsError extends Error {
+  constructor(readonly removed: Record<string, string[]>) {
+    super(`Dev agent removed exports other code may import: ${Object.entries(removed).map(([p, names]) => `${p} (${names.join(', ')})`).join('; ')}`);
+    this.name = 'RemovedExportsError';
   }
 }
 
@@ -52,13 +60,29 @@ export class ArchitectToDevPipeline {
     const existing = new Set(await this.files.list(repo, MODULES[moduleKey].paths, 2000));
     const modifiable = new Set(spec.output.interfaces.filter((i) => i.status === 'to_modify').map((i) => i.file));
 
+    const before = new Map<string, string>();
+    for (const path of modifiable) {
+      if (!existing.has(path)) continue;
+      const text = await this.files.read(repo, path);
+      if (text !== undefined) before.set(path, text);
+    }
+    const droppedExports = (files: FilePatch['files']): Record<string, string[]> =>
+      Object.fromEntries(
+        files
+          .filter((f) => before.has(f.path))
+          .map((f) => [f.path, removedExports(before.get(f.path)!, f.content)] as const)
+          .filter(([, names]) => names.length > 0),
+      );
+
     const violations = (output: unknown): string[] => {
       const files = (output as FilePatch).files;
+      const dropped = droppedExports(files);
       const outside = files.map((f) => f.path).filter((p) => !isPathInsideModule(moduleKey, p));
       const overwrites = files.map((f) => f.path).filter((p) => existing.has(p) && !modifiable.has(p));
       return [
         ...(outside.length ? [`files outside module ${moduleKey}: ${outside.join(', ')}`] : []),
         ...(overwrites.length ? [`these files already exist and the spec does not allow changing them; create new files instead: ${overwrites.join(', ')}`] : []),
+        ...Object.entries(dropped).map(([p, names]) => `${p} must keep every export it had (other files import them); you removed: ${names.join(', ')}`),
       ];
     };
 
@@ -72,6 +96,8 @@ export class ArchitectToDevPipeline {
     if (outside.length > 0) throw new ModuleBoundaryError(outside, moduleKey);
     const overwrites = patch.output.files.map((f) => f.path).filter((p) => existing.has(p) && !modifiable.has(p));
     if (overwrites.length > 0) throw new UnapprovedOverwriteError(overwrites);
+    const dropped = droppedExports(patch.output.files);
+    if (Object.keys(dropped).length > 0) throw new RemovedExportsError(dropped);
     return { spec, patch };
   }
 
