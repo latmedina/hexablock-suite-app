@@ -47,13 +47,15 @@ npm run pipeline -- "Implement HexBoard<TCell> as in docs/specs/P2-hex-geometry.
 ```
 
 HTTP API: `POST /api/pipeline {"request": "..."}` and `POST /api/agents/<id> {"prompt": "...", "module": "app/hexa-fit"}`.
+The Dev agents (`dev-app`, `dev-api`) only run through `/api/pipeline`, which feeds them the spec and repo context and
+answers 422 when a patch writes outside its module or over an existing file; `/api/agents/dev-*` answers 409.
 
 Swap a model without code changes: `AGENT_REVIEWER_MODELS="google/gemma-4-31b-it:free,recursive/flint-v1.0:free"`.
 
 ## n8n (optional)
 
 Import [`n8n/architect-to-dev.workflow.json`](n8n/architect-to-dev.workflow.json). It calls this app's
-`/api/agents/architect` then `/api/agents/dev-app|dev-api`. Run the app on the same server as n8n (or change the
+`/api/pipeline` once and returns its JSON and status code (200, or 422 when a guard blocked the patch). Run the app on the same server as n8n (or change the
 URLs), and keep the OpenRouter key in this app's env, not in n8n.
 
 ## Free-tier caveats

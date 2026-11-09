@@ -8,7 +8,14 @@ export const dynamic = 'force-dynamic';
 
 const Body = z.object({ request: z.string().min(10).max(8000) });
 
-/** POST /api/pipeline  { "request": "..." }  -> Architect (agent 1) -> Dev (agent 2). Returns spec + patch. */
+/** Guard failures: the Dev agent's patch broke a rule even after its repair turn. */
+const GUARD_ERRORS = new Set(['ModuleBoundaryError', 'UnapprovedOverwriteError']);
+
+/**
+ * POST /api/pipeline  { "request": "..." }  -> Architect (agent 1) -> Dev (agent 2). Returns spec + patch.
+ * This is the only way to run the Dev agents: it gives them the repo context and enforces the module and
+ * overwrite guards. The n8n workflow calls this route.
+ */
 export async function POST(req: Request) {
   if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -24,6 +31,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const err = error as Error;
-    return NextResponse.json({ error: err.name, message: err.message }, { status: 502 });
+    const status = GUARD_ERRORS.has(err.name) ? 422 : 502;
+    return NextResponse.json({ error: err.name, message: err.message }, { status });
   }
 }
