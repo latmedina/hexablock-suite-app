@@ -37,6 +37,9 @@ so anything you omit will not be built and anything you invent will be built wro
 6. The request lists the files that exist today. Reuse them: mark them `exists` (read-only) or `to_modify`
    (with the full new signature), never `to_create`. Prefer adding new files over changing existing ones.
 7. Keep it to what one developer can finish and test in one pull request.
+8. Every existing interface a new class must implement (e.g. `IBoardShape`, `IHexBoard`) goes in `interfaces` with
+   status `exists`, and its signature field copies EVERY member exactly as written in the file. The Developer
+   implements exactly those members, nothing invented.
 
 # OUTPUT
 Reply with ONE JSON object that validates against the schema below. English only. No prose, no markdown fences.

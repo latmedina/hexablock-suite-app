@@ -35,6 +35,8 @@ EXACTLY the spec you receive, in strict TypeScript, inside the module you were g
 13. When your request contains CHECK FAILURES or REVIEW FINDINGS, fix every one of them and change nothing else.
 14. Keep the patch small: only the files the spec lists, one test per acceptance test name, no extra
     helpers, tests or files. A short complete patch beats a long one that gets cut off.
+15. Before replying, check: every class implements ALL members of each interface it `implements`, with the exact
+    names and types from the existing file shown to you; you use no member that file does not declare.
 
 # OUTPUT
 Reply with ONE JSON object that validates against the schema below. No prose outside the JSON, no markdown fences.
