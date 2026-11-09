@@ -7,6 +7,8 @@ export interface LlmRequest {
   readonly messages: readonly ChatMessage[];
   readonly temperature: number;
   readonly maxTokens: number;
+  /** Per-call time limit; the gateway default applies when absent. */
+  readonly timeoutMs?: number;
   /** Aborts the call when the run is cancelled. */
   readonly signal?: AbortSignal;
 }

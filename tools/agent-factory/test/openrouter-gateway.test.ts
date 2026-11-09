@@ -62,6 +62,19 @@ describe('OpenRouterGateway', () => {
     await expect(act).rejects.toMatchObject({ status: 422 });
   });
 
+  it('should_abort_at_request_timeout_when_it_is_shorter_than_default', async () => {
+    // Arrange
+    const fakeFetch = ((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(init.signal?.reason)))) as unknown as typeof fetch;
+    const gateway = new OpenRouterGateway({ ...config, timeoutMs: 60_000 }, fakeFetch);
+    const startedAt = Date.now();
+    // Act
+    const act = gateway.complete({ ...request, timeoutMs: 50 });
+    // Assert
+    await expect(act).rejects.toThrow();
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+  });
+
   it('should_refuse_request_when_a_paid_model_slips_into_the_chain', async () => {
     // Arrange
     const gateway = new OpenRouterGateway(config, (async () => new Response('{}')) as unknown as typeof fetch);

@@ -31,6 +31,8 @@ EXACTLY the spec you receive, in strict TypeScript, inside the module you were g
       `../../../src/...`. Count the folders.
     - Implement members with the exact kind the interface declares (method vs property, readonly, optional).
 13. When your request contains CHECK FAILURES or REVIEW FINDINGS, fix every one of them and change nothing else.
+14. Keep the patch small: only the files the spec lists, one test per acceptance test name, no extra
+    helpers, tests or files. A short complete patch beats a long one that gets cut off.
 
 # OUTPUT
 Reply with ONE JSON object that validates against the schema below. `notes`: short English summary of what you
