@@ -59,6 +59,17 @@ export interface PipelineOptions {
   readonly reviewer?: Runnable<ReviewReport>;
   /** Live events for the dashboard. */
   readonly events?: IRunEvents;
+  /** Cancels the run: the current model call or check is stopped and no further step starts. */
+  readonly signal?: AbortSignal;
+  /** No repair round starts once the run has taken this long; the run ends as needs_human. */
+  readonly budgetMs?: number;
+}
+
+export class RunCancelledError extends Error {
+  constructor() {
+    super('The run was cancelled.');
+    this.name = 'RunCancelledError';
+  }
 }
 
 const MAX_CONTEXT_FILE_CHARS = 12_000;
@@ -74,6 +85,7 @@ const MAX_CONTEXT_FILE_CHARS = 12_000;
  */
 export class ArchitectToDevPipeline {
   private readonly events: IRunEvents;
+  private startedAt = Date.now();
 
   constructor(
     private readonly architect: Runnable<ArchitectSpec>,
@@ -86,6 +98,7 @@ export class ArchitectToDevPipeline {
 
   async run(request: string, source?: string): Promise<ArchitectToDevResult> {
     const startedAt = Date.now();
+    this.startedAt = startedAt;
     this.events.emit({ type: 'run.started', request, source });
     try {
       const result = await this.runSteps(request);
@@ -158,6 +171,8 @@ export class ArchitectToDevPipeline {
     let repairRounds = 0;
     const { verifier, reviewer } = this.options;
     const maxRounds = this.options.maxRepairRounds ?? 3;
+    const budgetMs = this.options.budgetMs ?? Number.POSITIVE_INFINITY;
+    const canRepair = () => repairRounds < maxRounds && Date.now() - this.startedAt < budgetMs;
 
     const runReview = async (round: number): Promise<void> => {
       if (!reviewer) return;
@@ -166,6 +181,7 @@ export class ArchitectToDevPipeline {
         review = await this.step('reviewer', round, reviewer, { moduleKey, userPrompt: reviewPrompt(spec.output, patch.output, verification) }, (out) => out);
         reviewError = undefined;
       } catch (error) {
+        if (error instanceof RunCancelledError) throw error;
         review = undefined;
         reviewError = `${(error as Error).name}: ${(error as Error).message}`;
       }
@@ -180,20 +196,20 @@ export class ArchitectToDevPipeline {
     for (;;) {
       if (verifier) verification = await this.verify(verifier, repo, patch.output, repairRounds);
       if (verification && !verification.ok) {
-        if (repairRounds >= maxRounds) break;
+        if (!canRepair()) break;
         await repair(`## CHECK FAILURES (type check, tests, lint on the patched repository)\n\n${describeFailures(verification, patch.output.files)}`);
         continue;
       }
       await runReview(repairRounds);
       const blocking = review ? blockingFindings(review.output) : [];
-      if (blocking.length > 0 && repairRounds < maxRounds) {
+      if (blocking.length > 0 && canRepair()) {
         await repair(`## REVIEW FINDINGS (blocking; the code passed the automatic checks)\n\n${blocking.map((f) => `- [${f.severity}] ${f.file} (${f.rule}): ${f.message}${f.suggestion ? `\n  Fix: ${f.suggestion}` : ''}`).join('\n')}`);
         continue;
       }
       break;
     }
     // The checks failed for good: still get the reviewer's diagnosis of the final patch, for the human.
-    if (reviewer && reviewedRound !== repairRounds) await runReview(repairRounds);
+    if (reviewer && reviewedRound !== repairRounds && Date.now() - this.startedAt < budgetMs) await runReview(repairRounds);
 
     const status: RunStatus = (verification?.ok ?? true) && !(review && blockingFindings(review.output).length > 0) ? 'ready' : 'needs_human';
     return { spec, patch, verification, repairRounds, review, reviewError, status };
@@ -201,26 +217,35 @@ export class ArchitectToDevPipeline {
 
   /** Runs one agent and reports it as a dashboard step. */
   private async step<TOut>(step: StepId, round: number, agent: Runnable<TOut>, input: RunAgentInput, data: (out: TOut) => unknown): Promise<AgentRunResult<TOut>> {
+    this.throwIfCancelled();
     const startedAt = Date.now();
     this.events.emit({ type: 'step.started', step, round, agentId: agent.id });
     try {
       const result = await agent.execute({
         ...input,
+        signal: this.options.signal,
         onAttempt: (a) => this.events.emit({ type: 'step.attempt', step, round, attempt: a.attempt, model: a.model, ok: a.ok, issues: a.issues, durationMs: a.durationMs, usage: a.usage }),
       });
       this.events.emit({ type: 'step.finished', step, round, ok: true, durationMs: Date.now() - startedAt, model: result.modelUsed, attempts: result.attempts, data: data(result.output) });
       return result;
     } catch (error) {
-      this.events.emit({ type: 'step.finished', step, round, ok: false, durationMs: Date.now() - startedAt, error: `${(error as Error).name}: ${(error as Error).message}` });
-      throw error;
+      const cancelled = this.options.signal?.aborted;
+      this.events.emit({ type: 'step.finished', step, round, ok: false, durationMs: Date.now() - startedAt, error: cancelled ? 'Cancelled' : `${(error as Error).name}: ${(error as Error).message}` });
+      throw cancelled ? new RunCancelledError() : error;
     }
   }
 
+  private throwIfCancelled(): void {
+    if (this.options.signal?.aborted) throw new RunCancelledError();
+  }
+
   private async verify(verifier: IPatchVerifier, repo: RepoKey, patch: FilePatch, round: number): Promise<VerifyReport> {
+    this.throwIfCancelled();
     const startedAt = Date.now();
     this.events.emit({ type: 'step.started', step: 'verify', round });
     try {
-      const report = await verifier.verify(repo, patch.files);
+      const report = await verifier.verify(repo, patch.files, this.options.signal);
+      this.throwIfCancelled();
       this.events.emit({ type: 'step.finished', step: 'verify', round, ok: report.ok, durationMs: Date.now() - startedAt, data: report });
       return report;
     } catch (error) {

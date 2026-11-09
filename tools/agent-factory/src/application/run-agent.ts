@@ -11,6 +11,8 @@ export interface RunAgentInput {
   readonly check?: (output: unknown) => readonly string[];
   /** Called after every model reply (valid or not), for the live dashboard. */
   readonly onAttempt?: (attempt: AttemptInfo) => void;
+  /** Cancels the model call when the run is cancelled. */
+  readonly signal?: AbortSignal;
 }
 
 export interface AttemptInfo {
@@ -63,6 +65,7 @@ export class RunAgent<TOut> {
         messages,
         temperature: this.definition.temperature,
         maxTokens: this.definition.maxTokens,
+        signal: input.signal,
       });
       lastRaw = response.content;
       const parsed = this.parse(response.content, input.check);

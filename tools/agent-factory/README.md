@@ -42,7 +42,9 @@ After the Dev patch passes the guards, the pipeline applies it to a detached `gi
 fails, Dev gets each type error with its lines of code and each failing test, and returns a full corrected
 patch. Once the checks pass, the Reviewer (another model family) reviews spec + patch; blocker and major
 findings go back to Dev too, and the patch is checked again. Both kinds of repair share one budget,
-`MAX_REPAIR_ROUNDS` (3). The run ends `ready` (checks pass, nothing blocking) or `needs_human`. The real working copy is never modified, but the generated tests do run on your
+`MAX_REPAIR_ROUNDS` (3). The run ends `ready` (checks pass, nothing blocking) or `needs_human`.
+No repair round starts after `RUN_BUDGET_MINUTES` (12). A running run can be cancelled from the dashboard
+(`POST /api/runs/<runId>/cancel`), or by the caller hanging up; the current model call or check stops at once. The real working copy is never modified, but the generated tests do run on your
 machine. Turn either step off with `VERIFY_PATCHES=0` / `REVIEW_PATCHES=0`.
 
 ## Guarantees

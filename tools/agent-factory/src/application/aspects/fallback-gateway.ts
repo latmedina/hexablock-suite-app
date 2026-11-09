@@ -14,6 +14,7 @@ export class FallbackLlmGateway implements ILlmGateway {
     } catch (firstError) {
       let lastError = firstError;
       for (const model of request.models.slice(1)) {
+        if (request.signal?.aborted) throw lastError;
         try {
           return await this.inner.complete({ ...request, models: [model] });
         } catch (error) {

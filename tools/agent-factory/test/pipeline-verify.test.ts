@@ -124,4 +124,28 @@ describe('Pipeline verification and repair', () => {
     expect(result.review?.output.verdict).toBe('approve');
     expect(events.at(-1)).toMatchObject({ type: 'run.finished', ok: true, status: 'needs_human', verified: false });
   });
+
+  it('should_stop_repairing_when_time_budget_is_spent', async () => {
+    // Arrange
+    const verifier = new ScriptedVerifier([failed]);
+    const { factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch())], { verifier, budgetMs: 0 });
+    // Act
+    const result = await factory.architectToDev().run('Implement hex geometry');
+    // Assert
+    expect(result.repairRounds).toBe(0);
+    expect(result.status).toBe('needs_human');
+  });
+
+  it('should_throw_cancelled_and_skip_next_steps_when_run_is_aborted', async () => {
+    // Arrange
+    const controller = new AbortController();
+    const verifier: IPatchVerifier = { verify: async () => { controller.abort(); return failed; } };
+    const { llm, events, factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch())], { verifier });
+    // Act
+    const act = factory.architectToDev(controller.signal).run('Implement hex geometry');
+    // Assert
+    await expect(act).rejects.toThrow(/cancelled/);
+    expect(llm.requests).toHaveLength(2);
+    expect(events.at(-1)).toMatchObject({ type: 'run.finished', ok: false, error: expect.stringContaining('RunCancelledError') });
+  });
 });

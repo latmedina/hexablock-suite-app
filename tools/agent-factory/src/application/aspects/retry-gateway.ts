@@ -27,10 +27,12 @@ export class RetryingLlmGateway implements ILlmGateway {
       try {
         return await this.inner.complete(request);
       } catch (error) {
+        if (request.signal?.aborted) throw error;
         const retryable = error instanceof LlmHttpError && [408, 429, 502, 503, 504].includes(error.status);
         if (!retryable || attempt >= this.maxRetries) throw error;
         const delay = error.retryAfterSeconds !== undefined ? error.retryAfterSeconds * 1000 : this.baseDelayMs * 2 ** attempt;
         await this.sleep(Math.min(delay, 60_000));
+        if (request.signal?.aborted) throw error;
       }
     }
   }

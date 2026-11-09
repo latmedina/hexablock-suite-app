@@ -250,6 +250,7 @@ function RunView({ run, ticking }: { run: Run; ticking: boolean }) {
           {run.verdict ? <span className={`chip ${run.verdict === 'approve' ? 'ok' : 'bad'}`}>Reviewer: {run.verdict === 'approve' ? 'aprueba' : 'pide cambios'}</span> : null}
         </div>
         <div style={{ whiteSpace: 'pre-wrap' }}>{run.request}</div>
+        {run.status === 'running' ? <CancelButton runId={run.runId} /> : null}
         <div className="track">
           {run.steps.map((s, i) => (
             <span key={s.key} style={{ display: 'contents' }}>
@@ -267,6 +268,22 @@ function RunView({ run, ticking }: { run: Run; ticking: boolean }) {
       {run.steps.map((s) => (
         <StepCard key={s.key} step={s} now={now} />
       ))}
+    </div>
+  );
+}
+
+function CancelButton({ runId }: { runId: string }) {
+  const [state, setState] = useState<'idle' | 'sent' | 'gone'>('idle');
+  async function cancel() {
+    if (!window.confirm('¿Cancelar esta ejecución? Se detiene el paso actual y no se entrega parche.')) return;
+    const res = await fetch(`/api/runs/${runId}/cancel`, { method: 'POST' });
+    setState(res.ok ? 'sent' : 'gone');
+  }
+  return (
+    <div>
+      <button onClick={cancel} disabled={state !== 'idle'}>
+        {state === 'idle' ? 'Cancelar ejecución' : state === 'sent' ? 'Cancelando…' : 'Ya no está en curso'}
+      </button>
     </div>
   );
 }
