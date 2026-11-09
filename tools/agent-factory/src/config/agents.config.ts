@@ -24,7 +24,7 @@ import { assertFreeModel, type FreeModelId } from '../domain/free-model';
  * maxTokens is generous on purpose: reasoning models spend tokens thinking, and a reply cut at the
  * limit is invalid JSON (second real run). A cut reply now fails over to the next model.
  * Dev (2026-11-09 run 569dab9d): north-mini-code ran to 32k tokens and was cut off after the other two
- * stalled, burning ~8 min, so it is out of the Dev chain and Dev calls give up after 150 s.
+ * stalled, burning ~8 min, so it is out of the Dev chain and Dev calls give up after 180 s.
  * Architect (run e846d0b5): two models in a row wrote one badly named acceptance test each and the run died,
  * so the Architect gets a third reply, from its third model, before it fails.
  * Free models come and go: run `npm run models:check` before a work session, and override any
@@ -47,8 +47,8 @@ const chain = (...ids: string[]): FreeModelId[] => ids.map(assertFreeModel);
 const BASE_DEFINITIONS: AgentDefinitions = {
   router: { id: 'router', role: 'Router / dispatcher', models: chain(M.nemotronLightning, M.nemotronSuperVl), promptFile: 'router.md', output: RouterDecision, temperature: 0, maxTokens: 1500, needsModuleContext: false },
   architect: { id: 'architect', role: 'Software architect (spec author)', models: chain(M.nemotronUltra, M.dots3Note, M.nemotronSuperVl), promptFile: 'architect.md', output: ArchitectSpec, temperature: 0.2, maxTokens: 16000, maxAttempts: 3, needsModuleContext: false },
-  'dev-app': { id: 'dev-app', role: 'Developer — app (Expo / generic engine)', models: chain(M.nemotronUltra, M.nemotronSuperVl, M.dots3Note), promptFile: 'dev-app.md', output: FilePatch, temperature: 0.1, maxTokens: 32000, timeoutMs: 150_000, needsModuleContext: true },
-  'dev-api': { id: 'dev-api', role: 'Developer — api (NestJS / Prisma)', models: chain(M.nemotronUltra, M.nemotronSuperVl, M.dots3Note), promptFile: 'dev-api.md', output: FilePatch, temperature: 0.1, maxTokens: 32000, timeoutMs: 150_000, needsModuleContext: true },
+  'dev-app': { id: 'dev-app', role: 'Developer — app (Expo / generic engine)', models: chain(M.nemotronUltra, M.nemotronSuperVl, M.dots3Note), promptFile: 'dev-app.md', output: FilePatch, temperature: 0.1, maxTokens: 32000, timeoutMs: 180_000, needsModuleContext: true },
+  'dev-api': { id: 'dev-api', role: 'Developer — api (NestJS / Prisma)', models: chain(M.nemotronUltra, M.nemotronSuperVl, M.dots3Note), promptFile: 'dev-api.md', output: FilePatch, temperature: 0.1, maxTokens: 32000, timeoutMs: 180_000, needsModuleContext: true },
   qa: { id: 'qa', role: 'QA / test engineer', models: chain(M.nemotronSuperVl, M.nemotronNanoReasoning, M.northMiniCode), promptFile: 'qa.md', output: QaReport, temperature: 0.1, maxTokens: 24000, needsModuleContext: true },
   reviewer: { id: 'reviewer', role: 'Code reviewer (different model family than Dev)', models: chain(M.dots3Note, M.nemotronUltra, M.flint), promptFile: 'reviewer.md', output: ReviewReport, temperature: 0, maxTokens: 16000, needsModuleContext: true },
   'level-designer': { id: 'level-designer', role: 'Level designer (Hexa Fit / Hexa Sort JSON)', models: chain(M.nemotronNanoReasoning, M.nemotronSuperVl), promptFile: 'level-designer.md', output: LevelPack, temperature: 0.4, maxTokens: 16000, needsModuleContext: true },

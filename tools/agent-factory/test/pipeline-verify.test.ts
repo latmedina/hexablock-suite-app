@@ -17,10 +17,10 @@ const failed: VerifyReport = { ok: false, checks: [{ name: 'typecheck', ok: fals
 const passed: VerifyReport = { ok: true, checks: [{ name: 'typecheck', ok: true, output: '', durationMs: 5 }] };
 const review = { verdict: 'approve', findings: [], summary: 'Looks right.' };
 
-function setup(replies: string[], extras: FactoryExtras) {
+function setup(replies: string[], extras: FactoryExtras, files: Record<string, string> = {}) {
   const llm = new ScriptedLlm(replies);
   const events: FactoryEvent[] = [];
-  const factory = new AgentFactory(loadAgentDefinitions({}), llm, new InMemoryPrompts(), new MemoryRunLog(), new InMemoryRepoFiles(), { now: () => new Date(0) }, 'run-1', {
+  const factory = new AgentFactory(loadAgentDefinitions({}), llm, new InMemoryPrompts(), new MemoryRunLog(), new InMemoryRepoFiles(files), { now: () => new Date(0) }, 'run-1', {
     ...extras,
     events: { publish: (e) => events.push(e) },
   });
@@ -188,5 +188,19 @@ describe('Pipeline verification and repair', () => {
     // Assert
     expect(result.status).toBe('needs_human');
     expect(result.verification?.checks.filter((c) => !c.ok)).toHaveLength(1);
+  });
+
+  it('should_show_imported_interfaces_to_dev_when_repairing_check_failures', async () => {
+    // Arrange
+    const importing = { files: [{ path: 'src/domain/geometry/HexGeometry.ts', action: 'create', content: "import type { IBoardShape } from '../board/IBoardShape';\nexport class HexGeometry {}" }], notes: 'n', assumptions: [] };
+    const files = { 'app:src/domain/board/IBoardShape.ts': 'export interface IBoardShape { contains(c: unknown): boolean; coords(): Iterable<unknown>; }' };
+    const verifier = new ScriptedVerifier([failed, passed]);
+    const { llm, factory } = setup([JSON.stringify(validSpec), JSON.stringify(importing), JSON.stringify(validPatch())], { verifier }, files);
+    // Act
+    await factory.architectToDev().run('Implement hex geometry');
+    // Assert
+    const repairPrompt = llm.requests[2]?.messages[1]?.content ?? '';
+    expect(repairPrompt).toContain('### src/domain/board/IBoardShape.ts');
+    expect(repairPrompt).toContain('coords(): Iterable<unknown>');
   });
 });

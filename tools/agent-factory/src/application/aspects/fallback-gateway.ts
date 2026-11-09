@@ -1,27 +1,23 @@
 import type { ILlmGateway, LlmRequest, LlmResponse } from '../ports';
 
 /**
- * Aspect (Decorator over ILlmGateway): OpenRouter's own `models` fallback does not cover every failure
- * (empty replies, provider errors after routing). If the chained call fails, try each fallback model
- * alone, in order, and only then give up with the last error.
+ * Aspect (Decorator over ILlmGateway): asks each model of the chain ALONE, in order, each with its own time limit
+ * (3 min by default). A model that times out, answers empty or errors hands over to the next one at once, so a
+ * stalled free model never holds the run for more than one time limit.
  */
 export class FallbackLlmGateway implements ILlmGateway {
   constructor(private readonly inner: ILlmGateway) {}
 
   async complete(request: LlmRequest): Promise<LlmResponse> {
-    try {
-      return await this.inner.complete(request);
-    } catch (firstError) {
-      let lastError = firstError;
-      for (const model of request.models.slice(1)) {
-        if (request.signal?.aborted) throw lastError;
-        try {
-          return await this.inner.complete({ ...request, models: [model] });
-        } catch (error) {
-          lastError = error;
-        }
+    let lastError: unknown = new Error('At least one model is required');
+    for (const model of request.models) {
+      if (request.signal?.aborted) throw lastError;
+      try {
+        return await this.inner.complete({ ...request, models: [model] });
+      } catch (error) {
+        lastError = error;
       }
-      throw lastError;
     }
+    throw lastError;
   }
 }

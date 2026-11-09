@@ -4,6 +4,7 @@ import { removedExports } from '../domain/exports';
 import { isPathInsideModule, MODULES, type RepoKey } from '../domain/modules';
 import type { IPatchVerifier, IRepoFiles, IRunEvents, StepId, VerifyReport } from './ports';
 import { describeFailures } from './check-failures';
+import { importCandidates, relativeImports } from './imports';
 import { NO_EVENTS, RunEvents } from './run-events';
 import type { RunAgentInput } from './run-agent';
 
@@ -80,6 +81,7 @@ export class RunCancelledError extends Error {
 }
 
 const MAX_CONTEXT_FILE_CHARS = 12_000;
+const MAX_IMPORTED_FILES = 8;
 
 /**
  * Agent 1 -> Agent 2 -> verification -> review. The Architect turns a request into a validated spec, seeing the
@@ -220,17 +222,19 @@ export class ArchitectToDevPipeline {
         reviewError = `${(error as Error).name}: ${(error as Error).message}`;
       }
     };
-    const repair = (feedback: string): Promise<boolean> => {
+    const repair = async (feedback: string): Promise<boolean> => {
       round += 1;
       roundsInTry += 1;
-      return callDev(repairPrompt(devPrompt, patch!.output, feedback));
+      const imported = await this.importedCode(repo, patch!.output.files);
+      return callDev(repairPrompt(devPrompt, patch!.output, `${feedback}${imported}`));
     };
-    const freshStart = (): Promise<boolean> => {
+    const freshStart = async (): Promise<boolean> => {
       round += 1;
       roundsInTry = 0;
       freshStarts += 1;
       const warnings = best?.verification ? describeFailures(best.verification, best.patch.output.files) : lastError ? String((lastError as Error).message) : '';
-      return callDev(freshPrompt(devPrompt, warnings));
+      const imported = best ? await this.importedCode(repo, best.patch.output.files) : '';
+      return callDev(freshPrompt(devPrompt, `${warnings}${imported}`));
     };
 
     // Try: Dev -> verify -> (repair, each round led by another model) -> review -> (repair on blocking findings).
@@ -319,6 +323,28 @@ export class ArchitectToDevPipeline {
       this.events.emit({ type: 'step.finished', step: 'verify', round, ok: false, durationMs: Date.now() - startedAt, error: (error as Error).message });
       throw error;
     }
+  }
+
+  /**
+   * The current code of the repository files a patch imports, so a repair can see the exact signatures it must
+   * implement instead of guessing them (free models kept inventing IBoardShape members in run 6a3e9820).
+   */
+  private async importedCode(repo: RepoKey, files: FilePatch['files']): Promise<string> {
+    const inPatch = new Set(files.map((f) => f.path));
+    const bases = [...new Set(files.flatMap((f) => relativeImports(f.path, f.content)))];
+    const blocks: string[] = [];
+    for (const base of bases) {
+      if (blocks.length >= MAX_IMPORTED_FILES) break;
+      for (const path of importCandidates(base)) {
+        if (inPatch.has(path)) break;
+        const text = await this.files.read(repo, path);
+        if (text === undefined) continue;
+        blocks.push(`### ${path}\n\`\`\`ts\n${text.slice(0, MAX_CONTEXT_FILE_CHARS)}\n\`\`\``);
+        break;
+      }
+    }
+    if (blocks.length === 0) return '';
+    return `\n\n## Code your patch imports (current repository content: implement these interfaces EXACTLY, use only members that exist here)\n\n${blocks.join('\n\n')}`;
   }
 
   private async architectPrompt(request: string): Promise<string> {

@@ -111,7 +111,7 @@ describe('RetryingLlmGateway', () => {
 });
 
 describe('FallbackLlmGateway', () => {
-  it('should_try_next_model_alone_when_chained_call_fails', async () => {
+  it('should_ask_next_model_alone_when_first_model_fails', async () => {
     // Arrange
     const { FallbackLlmGateway } = await import('../src/application/aspects/fallback-gateway');
     const inner = new ScriptedLlm([new LlmHttpError(502, 'empty reply'), 'ok']);
