@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FactoryEvent, StepId, VerifyReport } from '../src/application/ports';
 
 /* ---------- state built from the event stream ---------- */
@@ -103,6 +103,7 @@ export default function Dashboard() {
   const [events, setEvents] = useState<FactoryEvent[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
+  const power = usePower(conn !== 'login' && conn !== 'checking');
 
   useEffect(() => {
     if (conn !== 'checking') return;
@@ -110,7 +111,7 @@ export default function Dashboard() {
   }, [conn]);
 
   useEffect(() => {
-    if (conn !== 'connecting' && conn !== 'live') return;
+    if (power.stopped || (conn !== 'connecting' && conn !== 'live')) return;
     const source = new EventSource('/api/events');
     source.addEventListener('history', (m) => {
       setEvents(JSON.parse((m as MessageEvent<string>).data) as FactoryEvent[]);
@@ -121,7 +122,7 @@ export default function Dashboard() {
     return () => source.close();
     // Reconnect only when we go from login/checking to connecting.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conn === 'login' || conn === 'checking' || conn === 'offline']);
+  }, [conn === 'login' || conn === 'checking' || conn === 'offline', power.stopped]);
 
   const runs = useMemo(() => buildRuns(events), [events]);
 
@@ -142,12 +143,13 @@ export default function Dashboard() {
         <span className="spacer" />
         <span className="live">
           <span className={`dot ${conn === 'live' ? 'ok' : conn === 'offline' ? 'bad' : 'run'}`} />
-          {conn === 'live' ? 'En vivo' : conn === 'offline' ? 'Sin conexión con la fábrica' : 'Conectando…'}
+          {power.stopped ? 'Apagada' : conn === 'live' ? 'En vivo' : conn === 'offline' ? 'Sin conexión con la fábrica' : 'Conectando…'}
         </span>
       </header>
+      <PowerControls power={power} />
       <div className="layout">
         <aside className="sidebar">
-          <Launch />
+          <Launch disabled={power.state?.draining || power.stopped} />
           <ul className="runlist">
             {runs.map((r) => (
               <li key={r.runId}>
@@ -174,6 +176,68 @@ export default function Dashboard() {
         <main className="main">{run ? <RunView run={run} ticking={running} /> : <div className="empty">Lanza una ejecución desde aquí o desde n8n y la verás paso a paso.</div>}</main>
       </div>
     </div>
+  );
+}
+
+interface PowerState {
+  draining: boolean;
+  activeRuns: number;
+  managed: boolean;
+  local: { enabled: boolean; online: boolean; loaded: boolean; model: string };
+}
+
+function usePower(enabled: boolean) {
+  const [state, setState] = useState<PowerState | null>(null);
+  const [stopped, setStopped] = useState(false);
+  const draining = useRef(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!enabled) return;
+    let disposed = false;
+    const poll = async () => {
+      try {
+        const response = await fetch('/api/power', { signal: AbortSignal.timeout(5000), cache: 'no-store' });
+        if (!response.ok) return;
+        const current = await response.json() as PowerState;
+        if (disposed) return;
+        draining.current = current.draining;
+        setState(current);
+        setStopped(false);
+      } catch {
+        if (!disposed && draining.current) setStopped(true);
+      }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 3000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [enabled]);
+  async function shutdown() {
+    setError('');
+    try {
+      const response = await fetch('/api/power', { method: 'POST' });
+      if (!response.ok) throw new Error('No se pudo solicitar el apagado. Intenta de nuevo.');
+      draining.current = true;
+      setState(current => current ? { ...current, draining: true } : current);
+    } catch (error) { setError((error as Error).message); }
+  }
+  return { state, stopped, error, shutdown };
+}
+
+function PowerControls({ power }: { power: ReturnType<typeof usePower> }) {
+  const { state, stopped, error, shutdown } = power;
+  return (
+    <section className="powerbar" aria-label="Encendido y consumo">
+      <div aria-live="polite">
+        <strong>{stopped ? 'Fábrica apagada' : state?.draining ? 'Apagando al terminar las corridas' : 'Fábrica encendida'}</strong>
+        <p>{stopped ? 'Para volver a encenderla, abre «HexaBlock» en el Escritorio y recarga esta página.'
+          : state?.draining ? `${state.activeRuns} corrida(s) activa(s). No se aceptan nuevas solicitudes.`
+          : state?.local.enabled ? `Respaldo local: ${state.local.model}. ${!state.local.online ? 'No disponible.' : state.local.loaded ? 'Modelo en memoria; se libera tras 30 s sin uso.' : 'En espera; el modelo no ocupa memoria.'}`
+          : 'Al apagar se detiene la fábrica. No vuelve a encenderse hasta que la abras.'}</p>
+        {state && !state.managed && !stopped ? <p>Para activar este control, inicia la fábrica desde «HexaBlock» en el Escritorio.</p> : null}
+        {error ? <p role="alert">{error}</p> : null}
+      </div>
+      <button onClick={() => void shutdown()} disabled={!state?.managed || state.draining || stopped}>Apagar fábrica</button>
+    </section>
   );
 }
 
@@ -206,7 +270,7 @@ function Login({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Launch() {
+function Launch({ disabled = false }: { disabled?: boolean }) {
   const [request, setRequest] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -226,7 +290,7 @@ function Launch() {
     <div className="launch">
       <div className="label">Nueva ejecución</div>
       <textarea rows={3} value={request} onChange={(e) => setRequest(e.target.value)} placeholder="Ej.: Implementa HexGeometry según docs/specs/P2-hex-geometry.md" />
-      <button className="primary" onClick={launch} disabled={busy || request.trim().length < 10}>
+      <button className="primary" onClick={launch} disabled={disabled || busy || request.trim().length < 10}>
         {busy ? 'En curso… (síguela abajo)' : 'Lanzar Arquitecto → Dev'}
       </button>
       {error ? <div className="error-box">{error}</div> : null}

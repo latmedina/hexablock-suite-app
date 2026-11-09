@@ -44,7 +44,7 @@ pre { background: var(--code-bg); border: 1px solid var(--border); border-radius
 details > summary { cursor: pointer; color: var(--muted); }
 a { color: var(--accent); }
 
-.shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+.shell { display: grid; grid-template-rows: auto auto 1fr; min-height: 100vh; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 2; }
 .topbar h1 { font-size: 16px; margin: 0; }
 .topbar .spacer { flex: 1; }
@@ -93,3 +93,10 @@ th { color: var(--muted); font-weight: 500; }
 .error-box { background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 8px 12px; font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
 .dim { color: var(--muted); font-size: 12.5px; }
 .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.powerbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.powerbar p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+.powerbar button { flex-shrink: 0; min-height: 44px; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 600px) { .powerbar { align-items: stretch; flex-direction: column; } .topbar { flex-wrap: wrap; } }
+@media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }

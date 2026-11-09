@@ -1,4 +1,4 @@
-import { LlmHttpError } from '../application/aspects/retry-gateway';
+import { LlmHttpError, ProviderExhaustedError } from '../application/aspects/retry-gateway';
 import type { ILlmGateway, LlmRequest, LlmResponse } from '../application/ports';
 import { assertFreeModel } from '../domain/free-model';
 
@@ -67,6 +67,7 @@ export class OpenRouterGateway implements ILlmGateway {
       const retryAfter = Number(res.headers.get('retry-after'));
       const detail = json.error?.message ?? text.slice(0, 300);
       // Account-wide privacy settings (ZDR, no training) exclude every free endpoint: say how to fix it.
+      if (status === 429 && /free-models-per-day/i.test(detail)) throw new ProviderExhaustedError(`OpenRouter daily free quota exhausted: ${detail}`);
       const hint = /data policy|ZDR/i.test(detail) ? ' -> Free models need https://openrouter.ai/settings/privacy: turn off "ZDR Endpoints Only" and allow free endpoints.' : '';
       throw new LlmHttpError(status, `OpenRouter ${status}: ${detail}${hint}`, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
     }

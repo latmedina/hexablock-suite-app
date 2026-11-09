@@ -4,6 +4,7 @@ import { AGENT_IDS } from '../../../../src/domain/agent';
 import { isPathInsideModule, MODULE_KEYS } from '../../../../src/domain/modules';
 import { isAuthorized } from '../../../../src/infrastructure/auth';
 import { AgentFactory } from '../../../../src/main/agent-factory';
+import { finishRun, registerRun } from '../../../../src/infrastructure/run-registry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,9 +29,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const body = Body.safeParse(await req.json().catch(() => null));
   if (!body.success) return NextResponse.json({ error: 'Body must be { "prompt": string, "module"?: ModuleKey }' }, { status: 400 });
 
+  let runId: string | undefined;
   try {
     const factory = AgentFactory.fromEnv();
-    const result = await factory.create(agentId.data).execute({ userPrompt: body.data.prompt, moduleKey: body.data.module });
+    runId = factory.runId;
+    const controller = registerRun(runId);
+    const result = await factory.create(agentId.data).execute({ userPrompt: body.data.prompt, moduleKey: body.data.module, signal: AbortSignal.any([controller.signal, req.signal]) });
     const moduleKey = body.data.module;
     const output = result.output as { files?: Array<{ path: string }> };
     const outside = moduleKey && output.files ? output.files.map((f) => f.path).filter((p) => !isPathInsideModule(moduleKey, p)) : [];
@@ -40,6 +44,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ runId: factory.runId, agent: result.agentId, model: result.modelUsed, attempts: result.attempts, output: result.output });
   } catch (error) {
     const err = error as Error;
-    return NextResponse.json({ error: err.name, message: err.message }, { status: 502 });
+    return NextResponse.json({ error: err.name, message: err.message }, { status: err.name === 'FactoryDrainingError' ? 503 : 502 });
+  } finally {
+    if (runId) finishRun(runId);
   }
 }

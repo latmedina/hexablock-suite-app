@@ -1,3 +1,4 @@
+import { ProviderExhaustedError } from './retry-gateway';
 import type { ILlmGateway, LlmRequest, LlmResponse } from '../ports';
 
 /**
@@ -13,8 +14,11 @@ export class FallbackLlmGateway implements ILlmGateway {
     for (const model of request.models) {
       if (request.signal?.aborted) throw lastError;
       try {
-        return await this.inner.complete({ ...request, models: [model] });
+        const timeout = AbortSignal.timeout(request.timeoutMs ?? 180_000);
+        const signal = request.signal ? AbortSignal.any([request.signal, timeout]) : timeout;
+        return await this.inner.complete({ ...request, models: [model], signal });
       } catch (error) {
+        if (request.signal?.aborted || error instanceof ProviderExhaustedError || (error instanceof Error && error.name === 'PaidModelError')) throw error;
         lastError = error;
       }
     }
