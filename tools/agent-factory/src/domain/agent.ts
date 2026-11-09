@@ -23,6 +23,8 @@ export interface AgentDefinition<TOut = unknown> {
   readonly output: z.ZodType<TOut>;
   readonly temperature: number;
   readonly maxTokens: number;
+  /** Per-call time limit; overrides OPENROUTER_TIMEOUT_MS so a stalled free model fails over sooner. */
+  readonly timeoutMs?: number;
   /** Load root + module AGENTS.md of the target module into the system prompt. */
   readonly needsModuleContext: boolean;
 }

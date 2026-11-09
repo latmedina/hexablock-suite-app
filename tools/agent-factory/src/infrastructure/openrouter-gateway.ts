@@ -41,6 +41,7 @@ export class OpenRouterGateway implements ILlmGateway {
       reasoning: { exclude: true },
     };
 
+    const timeoutMs = request.timeoutMs ?? this.config.timeoutMs;
     const res = await this.fetchFn(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -50,7 +51,7 @@ export class OpenRouterGateway implements ILlmGateway {
         'X-Title': this.config.appTitle,
       },
       body: JSON.stringify(body),
-      signal: request.signal ? AbortSignal.any([AbortSignal.timeout(this.config.timeoutMs), request.signal]) : AbortSignal.timeout(this.config.timeoutMs),
+      signal: request.signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), request.signal]) : AbortSignal.timeout(timeoutMs),
     });
 
     const text = await res.text();

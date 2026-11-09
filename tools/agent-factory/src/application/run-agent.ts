@@ -65,6 +65,7 @@ export class RunAgent<TOut> {
         messages,
         temperature: this.definition.temperature,
         maxTokens: this.definition.maxTokens,
+        timeoutMs: this.definition.timeoutMs,
         signal: input.signal,
       });
       lastRaw = response.content;
