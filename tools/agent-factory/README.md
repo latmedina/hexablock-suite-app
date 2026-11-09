@@ -107,7 +107,7 @@ These commands do not install a login item or start anything at boot. Run them f
 `tools/agent-factory`:
 
 ```bash
-npm run power:on                # foreground; keep this terminal open
+npm run power:on                # build + production server; keep this terminal open
 npm run power:status            # in another terminal
 npm run power:off               # in another terminal; waits for active HTTP runs
 npm run power:on -- --local     # also start Ollama, if installed
@@ -115,7 +115,7 @@ npm run power:on -- --local     # also start Ollama, if installed
 
 Control + C in the startup terminal also requests a graceful shutdown. New HTTP
 runs receive 503 while shutting down; existing pipeline and standalone-agent HTTP
-runs finish before the managed Next.js process is stopped. Closing the terminal or
+runs finish before the managed Next.js production process is stopped. Closing the terminal or
 forcing a process to quit bypasses this protection. CLI `npm run pipeline` processes
 are separate and are not controlled by these commands.
 

@@ -26,7 +26,6 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (process.env.FACTORY_MANAGED !== '1') return NextResponse.json({ error: 'Start the factory with its desktop launcher to enable shutdown.' }, { status: 409 });
   drainRuns();
-  return NextResponse.json(powerState());
+  return NextResponse.json({ ...powerState(), managed: process.env.FACTORY_MANAGED === '1' });
 }

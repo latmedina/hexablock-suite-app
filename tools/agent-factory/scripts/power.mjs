@@ -50,7 +50,8 @@ async function main() {
     return;
   }
   if (command === 'stop') {
-    await state('POST');
+    const current = await state('POST');
+    if (!current.managed) throw new Error('El servidor antiguo está cerrando la admisión de corridas. Cuando terminen, ciérralo con Control + C y usa HexaBlock para encenderlo.');
     console.log('Apagado solicitado. Esperando las corridas activas; no cierres la terminal de arranque.');
     while (await listening(url)) await pause(2000);
     console.log('Fábrica apagada.');
@@ -72,7 +73,15 @@ async function main() {
   };
   process.on('SIGINT', requestStop);
   process.on('SIGTERM', requestStop);
+  process.on('SIGHUP', requestStop);
   try {
+    console.log('Preparando la fábrica para funcionar sin vigilantes de desarrollo…');
+    await new Promise((resolve, reject) => {
+      const build = launch(process.execPath, [require.resolve('next/dist/bin/next'), 'build']);
+      build.once('error', reject);
+      build.once('exit', code => code === 0 ? resolve() : reject(new Error('No se pudo compilar la fábrica. No se inició ningún servidor.')));
+    });
+    if (draining) return;
     if (options.includes('--local') || process.env.OLLAMA_ENABLED === '1') {
       if (await listening('http://127.0.0.1:11434')) {
         throw new Error('Ollama ya está activo fuera de este control. Ciérralo primero para poder apagar ambos juntos.');
@@ -89,7 +98,7 @@ async function main() {
       }
       if (failed || !await listening('http://127.0.0.1:11434')) throw new Error('Ollama no está disponible.');
     }
-    next = launch(process.execPath, [require.resolve('next/dist/bin/next'), 'dev', '--port', '3100', '--hostname', host], { FACTORY_MANAGED: '1', ...(ollama ? { OLLAMA_ENABLED: '1' } : {}) });
+    next = launch(process.execPath, [require.resolve('next/dist/bin/next'), 'start', '--port', '3100', '--hostname', host], { FACTORY_MANAGED: '1', ...(ollama ? { OLLAMA_ENABLED: '1' } : {}) });
     next.on('error', () => { failed = true; });
     next.on('exit', () => { failed = true; });
     console.log(`Fábrica: http://${host}:3100. Control + C solicita apagado sin cancelar corridas.`);

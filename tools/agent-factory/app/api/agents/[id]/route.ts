@@ -33,8 +33,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const factory = AgentFactory.fromEnv();
     runId = factory.runId;
-    registerRun(runId);
-    const result = await factory.create(agentId.data).execute({ userPrompt: body.data.prompt, moduleKey: body.data.module });
+    const controller = registerRun(runId);
+    const result = await factory.create(agentId.data).execute({ userPrompt: body.data.prompt, moduleKey: body.data.module, signal: AbortSignal.any([controller.signal, req.signal]) });
     const moduleKey = body.data.module;
     const output = result.output as { files?: Array<{ path: string }> };
     const outside = moduleKey && output.files ? output.files.map((f) => f.path).filter((p) => !isPathInsideModule(moduleKey, p)) : [];

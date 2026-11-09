@@ -44,6 +44,6 @@ describe('factory power control', () => {
     const after = await POST(new Request('http://localhost/api/power', { method: 'POST', headers }));
     // Assert
     expect(await before.json()).toMatchObject({ draining: false, activeRuns: 1 });
-    expect(await after.json()).toEqual({ draining: true, activeRuns: 1 });
+    expect(await after.json()).toMatchObject({ draining: true, activeRuns: 1 });
   });
 });
