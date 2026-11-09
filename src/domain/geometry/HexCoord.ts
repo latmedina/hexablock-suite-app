@@ -13,3 +13,17 @@ export type HexDirection = 'E' | 'NE' | 'NW' | 'W' | 'SW' | 'SE';
 
 /** The 3 line axes of a hexagonal board (used by Hexa Lines). */
 export type HexAxis = 'q' | 'r' | 's';
+
+/** Branded string key for a hex coordinate, format 'q,r'. */
+export type HexCoordKey = string & { readonly __brand: unique symbol };
+
+/** Convert a HexCoord to its string key 'q,r'. */
+export const toKey = (c: HexCoord): HexCoordKey => `${c.q},${c.r}` as HexCoordKey;
+
+/** Convert a string key 'q,r' back to a HexCoord. */
+export const fromKey = (k: HexCoordKey): HexCoord => {
+  const parts = k.split(',');
+  const q = Number(parts[0]);
+  const r = Number(parts[1]);
+  return { q, r };
+};
