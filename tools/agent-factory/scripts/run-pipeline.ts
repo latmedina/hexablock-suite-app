@@ -1,6 +1,6 @@
 /** CLI: npm run pipeline -- "your request"  (reads .env.local via node --env-file if present) */
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { readEnv } from '../src/config/env';
+import { archiveRun } from '../src/infrastructure/run-archive';
 import { AgentFactory } from '../src/main/agent-factory';
 
 try {
@@ -14,14 +14,10 @@ if (!request) {
   process.exit(1);
 }
 const factory = AgentFactory.fromEnv();
-const { spec, patch } = await factory.architectToDev().run(request);
-const outDir = path.resolve('.runs', factory.runId);
-await mkdir(outDir, { recursive: true });
-await writeFile(path.join(outDir, 'spec.json'), JSON.stringify(spec.output, null, 2));
-for (const f of patch.output.files) {
-  const target = path.join(outDir, 'patch', f.path);
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, f.content);
-}
-console.log(`Architect: ${spec.modelUsed} | Dev: ${patch.modelUsed}`);
+const result = await factory.architectToDev().run(request, 'cli');
+const outDir = await archiveRun(readEnv().runsDir, factory.runId, result);
+const checks = result.verification ? result.verification.checks.map((c) => `${c.name} ${c.ok ? 'OK' : 'FAILED'}`).join(', ') : 'not run';
+console.log(`Architect: ${result.spec.modelUsed} | Dev: ${result.patch.modelUsed} | repair rounds: ${result.repairRounds}`);
+console.log(`Checks: ${checks}`);
+if (result.review) console.log(`Reviewer (${result.review.modelUsed}): ${result.review.output.verdict} — ${result.review.output.summary}`);
 console.log(`Spec and patch written to ${outDir} — review, then copy into your dev/<name> branch.`);

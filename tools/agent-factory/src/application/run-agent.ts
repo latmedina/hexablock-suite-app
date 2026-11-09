@@ -9,6 +9,17 @@ export interface RunAgentInput {
   readonly moduleKey?: ModuleKey;
   /** Extra domain checks on a schema-valid output; returned issues trigger the repair turn. */
   readonly check?: (output: unknown) => readonly string[];
+  /** Called after every model reply (valid or not), for the live dashboard. */
+  readonly onAttempt?: (attempt: AttemptInfo) => void;
+}
+
+export interface AttemptInfo {
+  readonly attempt: number;
+  readonly model: string;
+  readonly ok: boolean;
+  readonly issues?: string;
+  readonly durationMs: number;
+  readonly usage?: { promptTokens: number; completionTokens: number };
 }
 
 export class AgentOutputError extends Error {
@@ -46,6 +57,7 @@ export class RunAgent<TOut> {
       attempts += 1;
       // The repair turn starts from the next model: the one that just failed is the least likely to fix it.
       const models = attempts === 1 ? this.definition.models : [...this.definition.models.slice(1), ...this.definition.models.slice(0, 1)];
+      const startedAt = Date.now();
       const response = await this.llm.complete({
         models,
         messages,
@@ -54,6 +66,7 @@ export class RunAgent<TOut> {
       });
       lastRaw = response.content;
       const parsed = this.parse(response.content, input.check);
+      input.onAttempt?.({ attempt: attempts, model: response.modelUsed, ok: parsed.success, issues: parsed.success ? undefined : parsed.issues, durationMs: Date.now() - startedAt, usage: response.usage });
       if (parsed.success) {
         return { agentId: this.definition.id, modelUsed: response.modelUsed, output: parsed.data, raw: response.content, attempts, usage: response.usage };
       }

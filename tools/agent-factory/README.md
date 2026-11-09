@@ -23,6 +23,26 @@ Models are chosen in one file: [`src/config/agents.config.ts`](src/config/agents
 [`prompts/`](prompts/). The JSON Schema of each agent's output contract ([`src/domain/contracts.ts`](src/domain/contracts.ts))
 is appended to its system prompt automatically, and the root + module `AGENTS.md` are injected for agents that write code.
 
+## Live dashboard
+
+Open the app root (`http://localhost:3100`, or the machine's Tailscale name). It shows every run as it happens,
+whether it was started from the page, from n8n or from the API: the pipeline track
+(Architect → Dev → Verifier → Dev repair → … → Reviewer), each model reply and repair attempt with model, time and
+tokens, the spec, the patch files, the tsc/jest/lint output and the review findings. Events are streamed with
+Server-Sent Events from `GET /api/events` and kept in `.runs/events.jsonl`, so history survives restarts; each
+run's full result is also written to `.runs/<runId>/`. When `FACTORY_TOKEN` is set the page asks for it once and
+keeps it in an HttpOnly cookie. Runs started with `npm run pipeline` (another process) only appear after a restart.
+
+## Verification and review
+
+After the Dev patch passes the guards, the pipeline applies it to a detached `git worktree` of the repo at
+`HEAD` (in a temp folder, with the repo's `node_modules` linked) and runs the repo's own scripts:
+`typecheck`, `lint:tests`, `lint:arch` and `test` for the app, `typecheck` and `test:unit` for the api. If any
+fails, the output goes back to Dev for a full corrected patch, up to `MAX_REPAIR_ROUNDS` (2). The response says
+whether the last patch passed. Then the Reviewer (another model family) reviews spec + patch + check results;
+its verdict is advisory. The real working copy is never modified, but the generated tests do run on your
+machine. Turn either step off with `VERIFY_PATCHES=0` / `REVIEW_PATCHES=0`.
+
 ## Guarantees
 
 - **Free only.** Every model id must end in `:free`; anything else throws `PaidModelError` at startup and again
