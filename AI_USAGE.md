@@ -20,6 +20,7 @@ Required by section 7 of the assignment. Every team member logs their own signif
 | 2026-11-09 | Luis | P2 hex geometry (distance, neighbours, 60 degree rotation) | Agent factory, run `fca9797e` (free OpenRouter models: Architect dots-3-note-preview, Dev and Reviewer nemotron-3-ultra) | "Implement HexGeometry distance and neighbours as described in docs/specs/P2-hex-geometry.md" | `HexGeometry`, `HexCoord` helpers and unit tests (PR #24); 1 automatic repair round after the verifier; Reviewer approved | Verified with typecheck, lint:tests, lint:arch and jest; reviewed by Luis before merge | Earlier runs failed (truncated replies, broken imports, dropped exports) until the factory got a verifier, a reviewer-to-dev loop and an export check |
 
 | 2026-11-09 | Luis | Manual factory lifecycle and local fallback | Codex | "Haz lo que necesites para que funcione" | Dashboard power controls, graceful HTTP draining, managed Ollama lifecycle, local JSON gateway and daily-quota fallback | Typecheck and 81 factory tests passed; real local JSON inference verified; pending owner review | Paid cloud models remain rejected; no login service installed |
+| 2026-11-09 | Luis | Complete generic HexBoard (P2) | Codex | "Terminar HexBoard<TCell>" | Immutable board, hexagon/custom shapes, finite iterators, center-relative rotation and domain tests | Typecheck, test-name lint, architecture lint and 34 tests passed; pending owner review | Shape inputs are snapshotted; cell values remain shared and should be immutable |
 
 ## Critical evaluation
 

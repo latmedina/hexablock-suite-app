@@ -2,7 +2,7 @@
 
 - Owner: @latmedina (I1)
 - Layer(s): domain
-- Status: draft, to be approved by the owner before implementation
+- Status: implementation requested by the owner; pending code review
 
 ## Goal
 
@@ -20,13 +20,15 @@ without changes. Everything else in the engine depends on it, so it is tested fi
 
 - Axial `(q, r)`, cube `s = -q - r`, pointy-top, screen y downwards (see `src/domain/AGENTS.md`).
 - Direction deltas: E (+1, 0), NE (+1, -1), NW (0, -1), W (-1, 0), SW (-1, +1), SE (0, +1).
-  **Open point:** the draft comment in `HexCoord.ts` says the list is clockwise, but E → NE → NW → W → SW → SE
-  is counter-clockwise on screen. Fix the comment or the order before implementing.
+  This order is counter-clockwise on screen; the coordinate type documents the same convention.
 - Distance `max(|dq|, |dr|, |ds|)`; hexagon of radius N has `3N(N+1) + 1` cells.
 - Rotation 60° clockwise around a center: translate, apply `(q, r, s) -> (-r, -s, -q)`, translate back.
   Six rotations return the original coordinate.
 - `neighbours()` only returns coordinates inside the shape (border cells have fewer than 6).
 - `line(axis, index)` walks a full line of constant q, r or s in a fixed order; lines get shorter towards the border.
+- `ray(from, direction)` excludes its origin and stops at the first coordinate outside the shape (including holes).
+- Lines and rings have deterministic ascending `(q, r)` order. Rings are clipped to the shape; a radius must be a non-negative safe integer.
+- Shapes snapshot and deduplicate their coordinates. `clone()` copies board structure and shares cell values, which callers should keep immutable.
 - `ring(center, k)` has `6k` cells for k ≥ 1 and 1 cell for k = 0 (inside an unbounded shape).
 - `with()` never mutates; `get()` outside the shape returns `undefined`; `with()` outside the shape throws.
 - Coordinate keys are built in one place only (avoids the x/y swap bug seen in the previous semester's project).

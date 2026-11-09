@@ -32,10 +32,11 @@ export class HexGeometry {
     return this.add(center, dir);
   }
 
-  static rotate60CW(coord: HexCoord): HexCoord {
+  static rotate60CW(coord: HexCoord, center: HexCoord = { q: 0, r: 0 }): HexCoord {
     // Cube rotation (q, r, s) -> (-r, -s, -q) where s = -q - r
     // -s = -(-q - r) = q + r
-    return { q: -coord.r, r: coord.q + coord.r };
+    const relative = this.subtract(coord, center);
+    return this.add({ q: -relative.r, r: relative.q + relative.r }, center);
   }
 
   static add(a: HexCoord, b: HexCoord): HexCoord {

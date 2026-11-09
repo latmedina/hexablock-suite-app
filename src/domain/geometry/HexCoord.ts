@@ -8,7 +8,7 @@ export interface HexCoord {
   readonly r: number;
 }
 
-/** The 6 neighbour directions of a pointy/flat hex grid, in clockwise order. */
+/** The 6 neighbour directions of a pointy/flat hex grid, in counter-clockwise screen order (E, NE, NW, W, SW, SE). */
 export type HexDirection = 'E' | 'NE' | 'NW' | 'W' | 'SW' | 'SE';
 
 /** The 3 line axes of a hexagonal board (used by Hexa Lines). */
