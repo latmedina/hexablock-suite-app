@@ -23,9 +23,9 @@
         "url": "http://127.0.0.1:3100/api/pipeline",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ request: $json.body.request }) }}",
+        "jsonBody": "={{ JSON.stringify({ request: $json.body.request, source: 'n8n' }) }}",
         "options": {
-          "timeout": 600000,
+          "timeout": 1800000,
           "response": {
             "response": {
               "fullResponse": true,

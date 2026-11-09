@@ -31,3 +31,25 @@ describe('isAuthorized', () => {
     expect(ok).toBe(true);
   });
 });
+
+describe('isAuthorized with the dashboard cookie', () => {
+  const withCookie = (cookie: string) => new Request('http://x/api/events', { headers: { cookie } });
+
+  it('should_allow_request_when_cookie_holds_the_token', () => {
+    // Arrange
+    const request = withCookie('theme=dark; factory_token=secret-token');
+    // Act
+    const ok = isAuthorized(request, 'secret-token');
+    // Assert
+    expect(ok).toBe(true);
+  });
+
+  it('should_reject_request_when_cookie_holds_another_token', () => {
+    // Arrange
+    const request = withCookie('factory_token=guess');
+    // Act
+    const ok = isAuthorized(request, 'secret-token');
+    // Assert
+    expect(ok).toBe(false);
+  });
+});

@@ -1,8 +1,9 @@
 import type { AgentRunResult } from '../domain/agent';
-import type { ArchitectSpec, FilePatch } from '../domain/contracts';
+import type { ArchitectSpec, FilePatch, ReviewReport } from '../domain/contracts';
 import { removedExports } from '../domain/exports';
 import { isPathInsideModule, MODULES, type RepoKey } from '../domain/modules';
-import type { IRepoFiles } from './ports';
+import type { IPatchVerifier, IRepoFiles, IRunEvents, StepId, VerifyReport } from './ports';
+import { NO_EVENTS, RunEvents } from './run-events';
 import type { RunAgentInput } from './run-agent';
 
 /** Anything that runs like an agent (a RunAgent or one of its decorators). */
@@ -35,26 +36,71 @@ export class RemovedExportsError extends Error {
 export interface ArchitectToDevResult {
   readonly spec: AgentRunResult<ArchitectSpec>;
   readonly patch: AgentRunResult<FilePatch>;
+  /** Present when a verifier is configured: the checks of the LAST patch. */
+  readonly verification?: VerifyReport;
+  /** Dev repair rounds that followed a failed verification (0 = first patch passed or no verifier). */
+  readonly repairRounds: number;
+  /** Present when a reviewer is configured and answered; reviewError when it did not. */
+  readonly review?: AgentRunResult<ReviewReport>;
+  readonly reviewError?: string;
+}
+
+export interface PipelineOptions {
+  /** Applies the patch to a throwaway copy of the repo and runs tsc/jest/lint. */
+  readonly verifier?: IPatchVerifier;
+  /** Dev repair rounds allowed after a failed verification. */
+  readonly maxRepairRounds?: number;
+  /** Reviews the final patch (a different model family than Dev). Its verdict never blocks the patch. */
+  readonly reviewer?: Runnable<ReviewReport>;
+  /** Live events for the dashboard. */
+  readonly events?: IRunEvents;
 }
 
 const MAX_CONTEXT_FILE_CHARS = 12_000;
+const MAX_CHECK_OUTPUT_FOR_DEV = 6_000;
 
 /**
- * Agent 1 -> Agent 2. The Architect turns a request into a validated spec, seeing the real file tree of
- * both repos. The Dev agent of the spec's repo receives that spec plus the current content of every file
- * the spec says exists or must change, and its patch must stay inside the module and may only replace
- * files the spec marked `to_modify`. Violations go back to the agent as a repair turn, then fail loudly.
- * Nothing is written to disk here: a human applies the patch.
+ * Agent 1 -> Agent 2 -> verification -> review. The Architect turns a request into a validated spec, seeing the
+ * real file tree of both repos. The Dev agent of the spec's repo receives that spec plus the current content of
+ * every file the spec says exists or must change; its patch must stay inside the module, may only replace files
+ * the spec marked `to_modify`, and must keep their exports. Guard violations go back to the agent as a repair
+ * turn, then fail loudly. If a verifier is configured, the patch is type-checked and tested on a copy of the
+ * repo and failures go back to Dev for up to `maxRepairRounds` rounds. Nothing is written to the real repo:
+ * a human applies the patch.
  */
 export class ArchitectToDevPipeline {
+  private readonly events: IRunEvents;
+
   constructor(
     private readonly architect: Runnable<ArchitectSpec>,
     private readonly devFor: (repo: RepoKey) => Runnable<FilePatch>,
     private readonly files: IRepoFiles,
-  ) {}
+    private readonly options: PipelineOptions = {},
+  ) {
+    this.events = options.events ?? new RunEvents(NO_EVENTS, 'no-run');
+  }
 
-  async run(request: string): Promise<ArchitectToDevResult> {
-    const spec = await this.architect.execute({ userPrompt: await this.architectPrompt(request) });
+  async run(request: string, source?: string): Promise<ArchitectToDevResult> {
+    const startedAt = Date.now();
+    this.events.emit({ type: 'run.started', request, source });
+    try {
+      const result = await this.runSteps(request);
+      this.events.emit({
+        type: 'run.finished',
+        ok: true,
+        durationMs: Date.now() - startedAt,
+        verified: result.verification?.ok,
+        verdict: result.review?.output.verdict,
+      });
+      return result;
+    } catch (error) {
+      this.events.emit({ type: 'run.finished', ok: false, durationMs: Date.now() - startedAt, error: `${(error as Error).name}: ${(error as Error).message}` });
+      throw error;
+    }
+  }
+
+  private async runSteps(request: string): Promise<ArchitectToDevResult> {
+    const spec = await this.step('architect', 0, this.architect, { userPrompt: await this.architectPrompt(request) }, (out) => out);
     const moduleKey = spec.output.module;
     const repo = MODULES[moduleKey].repo;
     const existing = new Set(await this.files.list(repo, MODULES[moduleKey].paths, 2000));
@@ -86,19 +132,74 @@ export class ArchitectToDevPipeline {
       ];
     };
 
-    const patch = await this.devFor(repo).execute({
-      moduleKey,
-      check: violations,
-      userPrompt: await this.devPrompt(spec.output, repo, [...existing]),
-    });
+    const enforceGuards = (patch: AgentRunResult<FilePatch>): void => {
+      const outside = patch.output.files.map((f) => f.path).filter((p) => !isPathInsideModule(moduleKey, p));
+      if (outside.length > 0) throw new ModuleBoundaryError(outside, moduleKey);
+      const overwrites = patch.output.files.map((f) => f.path).filter((p) => existing.has(p) && !modifiable.has(p));
+      if (overwrites.length > 0) throw new UnapprovedOverwriteError(overwrites);
+      const dropped = droppedExports(patch.output.files);
+      if (Object.keys(dropped).length > 0) throw new RemovedExportsError(dropped);
+    };
 
-    const outside = patch.output.files.map((f) => f.path).filter((p) => !isPathInsideModule(moduleKey, p));
-    if (outside.length > 0) throw new ModuleBoundaryError(outside, moduleKey);
-    const overwrites = patch.output.files.map((f) => f.path).filter((p) => existing.has(p) && !modifiable.has(p));
-    if (overwrites.length > 0) throw new UnapprovedOverwriteError(overwrites);
-    const dropped = droppedExports(patch.output.files);
-    if (Object.keys(dropped).length > 0) throw new RemovedExportsError(dropped);
-    return { spec, patch };
+    const dev = this.devFor(repo);
+    const devPrompt = await this.devPrompt(spec.output, repo, [...existing]);
+    let patch = await this.step('dev', 0, dev, { moduleKey, check: violations, userPrompt: devPrompt }, summarizePatch);
+    enforceGuards(patch);
+
+    let verification: VerifyReport | undefined;
+    let repairRounds = 0;
+    const { verifier } = this.options;
+    if (verifier) {
+      const maxRounds = this.options.maxRepairRounds ?? 2;
+      for (let round = 0; ; round += 1) {
+        verification = await this.verify(verifier, repo, patch.output, round);
+        if (verification.ok || round >= maxRounds) break;
+        repairRounds = round + 1;
+        patch = await this.step('dev', repairRounds, dev, { moduleKey, check: violations, userPrompt: repairPrompt(devPrompt, patch.output, verification) }, summarizePatch);
+        enforceGuards(patch);
+      }
+    }
+
+    let review: AgentRunResult<ReviewReport> | undefined;
+    let reviewError: string | undefined;
+    if (this.options.reviewer) {
+      try {
+        review = await this.step('reviewer', 0, this.options.reviewer, { moduleKey, userPrompt: reviewPrompt(spec.output, patch.output, verification) }, (out) => out);
+      } catch (error) {
+        reviewError = `${(error as Error).name}: ${(error as Error).message}`;
+      }
+    }
+    return { spec, patch, verification, repairRounds, review, reviewError };
+  }
+
+  /** Runs one agent and reports it as a dashboard step. */
+  private async step<TOut>(step: StepId, round: number, agent: Runnable<TOut>, input: RunAgentInput, data: (out: TOut) => unknown): Promise<AgentRunResult<TOut>> {
+    const startedAt = Date.now();
+    this.events.emit({ type: 'step.started', step, round, agentId: agent.id });
+    try {
+      const result = await agent.execute({
+        ...input,
+        onAttempt: (a) => this.events.emit({ type: 'step.attempt', step, round, attempt: a.attempt, model: a.model, ok: a.ok, issues: a.issues, durationMs: a.durationMs, usage: a.usage }),
+      });
+      this.events.emit({ type: 'step.finished', step, round, ok: true, durationMs: Date.now() - startedAt, model: result.modelUsed, attempts: result.attempts, data: data(result.output) });
+      return result;
+    } catch (error) {
+      this.events.emit({ type: 'step.finished', step, round, ok: false, durationMs: Date.now() - startedAt, error: `${(error as Error).name}: ${(error as Error).message}` });
+      throw error;
+    }
+  }
+
+  private async verify(verifier: IPatchVerifier, repo: RepoKey, patch: FilePatch, round: number): Promise<VerifyReport> {
+    const startedAt = Date.now();
+    this.events.emit({ type: 'step.started', step: 'verify', round });
+    try {
+      const report = await verifier.verify(repo, patch.files);
+      this.events.emit({ type: 'step.finished', step: 'verify', round, ok: report.ok, durationMs: Date.now() - startedAt, data: report });
+      return report;
+    } catch (error) {
+      this.events.emit({ type: 'step.finished', step: 'verify', round, ok: false, durationMs: Date.now() - startedAt, error: (error as Error).message });
+      throw error;
+    }
   }
 
   private async architectPrompt(request: string): Promise<string> {
@@ -138,4 +239,45 @@ export class ArchitectToDevPipeline {
       contents.length ? contents.join('\n\n') : '(none)',
     ].join('\n');
   }
+}
+
+/** What the dashboard shows for a Dev step: the files, with content, so they can be opened. */
+function summarizePatch(patch: FilePatch): unknown {
+  return patch;
+}
+
+function tail(text: string, max: number): string {
+  return text.length <= max ? text : `…${text.slice(-max)}`;
+}
+
+function repairPrompt(devPrompt: string, previous: FilePatch, report: VerifyReport): string {
+  const failed = report.checks.filter((c) => !c.ok);
+  return [
+    devPrompt,
+    '',
+    '## Your previous patch',
+    '```json',
+    JSON.stringify(previous, null, 2),
+    '```',
+    '',
+    '## It was applied to a copy of the repository and these checks FAILED',
+    ...failed.map((c) => `### ${c.name}\n\`\`\`text\n${tail(c.output, Math.floor(MAX_CHECK_OUTPUT_FOR_DEV / Math.max(1, failed.length)))}\n\`\`\``),
+    '',
+    'Fix every error above. Reply with the FULL corrected patch (every file, complete content), not a diff.',
+    'Keep the same interfaces and acceptance test names. Relative imports must resolve from each file\'s folder.',
+  ].join('\n');
+}
+
+function reviewPrompt(spec: ArchitectSpec, patch: FilePatch, report: VerifyReport | undefined): string {
+  return [
+    'Review this patch against its spec and the repository rules.',
+    '## Spec',
+    '```json',
+    JSON.stringify(spec, null, 2),
+    '```',
+    '## Patch',
+    ...patch.files.map((f) => `### ${f.action} ${f.path}\n\`\`\`ts\n${f.content}\n\`\`\``),
+    '## Automatic checks (type check, tests, lint) on the patched repository',
+    report ? report.checks.map((c) => `- ${c.name}: ${c.ok ? 'passed' : 'FAILED'}${c.ok ? '' : `\n\`\`\`text\n${tail(c.output, 1500)}\n\`\`\``}`).join('\n') : '(not run)',
+  ].join('\n');
 }
