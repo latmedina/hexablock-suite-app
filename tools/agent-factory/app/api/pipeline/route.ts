@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const err = error as Error;
-    const status = err.name === CANCELLED ? 409 : GUARD_ERRORS.has(err.name) ? 422 : 502;
+    const status = err.name === 'FactoryDrainingError' ? 503 : err.name === CANCELLED ? 409 : GUARD_ERRORS.has(err.name) ? 422 : 502;
     return NextResponse.json({ error: err.name, message: err.message, runId }, { status });
   } finally {
     if (runId) finishRun(runId);

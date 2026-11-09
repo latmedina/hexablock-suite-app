@@ -5,7 +5,9 @@
   "description": "Agent factory for HexaBlock Suite: role-based agents on free OpenRouter models, orchestrated by Next.js",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev --port 3100",
     "build": "next build",
@@ -13,7 +15,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "models:check": "tsx scripts/check-free-models.ts",
-    "pipeline": "tsx scripts/run-pipeline.ts"
+    "pipeline": "tsx scripts/run-pipeline.ts",
+    "power:on": "node scripts/power.mjs start",
+    "power:off": "node scripts/power.mjs stop",
+    "power:status": "node scripts/power.mjs status"
   },
   "dependencies": {
     "next": "16.4.5",

@@ -1,6 +1,6 @@
 # HexaBlock Agent Factory
 
-Role-based AI agents for building HexaBlock Suite, running **only on free OpenRouter models** and orchestrated by a
+Role-based AI agents for building HexaBlock Suite, running **only on free OpenRouter models or local Ollama models** and orchestrated by a
 small Next.js app (plain `fetch`, OpenAI-compatible API). Optional n8n workflow included.
 
 This is a development tool. It is not part of the mobile app and is excluded from the app's `tsconfig`, Jest and
@@ -51,14 +51,14 @@ machine. Turn either step off with `VERIFY_PATCHES=0` / `REVIEW_PATCHES=0`.
 
 ## Guarantees
 
-- **Free only.** Every model id must end in `:free`; anything else throws `PaidModelError` at startup and again
+- **Free cloud only.** Every OpenRouter model id must end in `:free`; anything else throws `PaidModelError` at startup and again
   right before each request. `npm run models:check` verifies live against `/api/v1/models` that each configured
   model still exists with price 0.
 - **Validated output.** Each reply is parsed and validated with zod; one repair turn, then a hard error.
 - **Module boundary.** A Dev patch that writes outside the spec's module, or replaces an existing file the spec did not mark `to_modify`, goes back to the agent once and then fails.
 - **Real context.** The Architect sees the file tree of both repos; the Dev sees the current content of every file the spec references.
 - **Nothing is written to the repo.** You get a spec and a patch; a human reviews and commits on `dev/<name>`.
-- **Rate limits.** OpenRouter falls back through the free chain (`models`); 429/5xx are retried with backoff.
+- **Rate limits.** OpenRouter falls back through the free chain (`models`); transient 429/5xx are retried within a 3-minute model budget. Daily free-quota exhaustion skips the remaining cloud models and uses Ollama until UTC midnight, if enabled.
 - **Traceability.** Every run is appended to `.runs/runs.jsonl` (agent, model, prompt) for `AI_USAGE.md`.
 
 ## Use
@@ -100,3 +100,39 @@ npx next dev --port 3100 -H <this-machine-tailscale-ip>
 
 Import `n8n/architect-to-dev.workflow.json` after replacing `127.0.0.1` with this machine's Tailscale name and
 `__FACTORY_TOKEN__` with the token. Protect the n8n webhook itself with Header Auth.
+
+## Manual power controls (macOS)
+
+These commands do not install a login item or start anything at boot. Run them from
+`tools/agent-factory`:
+
+```bash
+npm run power:on                # foreground; keep this terminal open
+npm run power:status            # in another terminal
+npm run power:off               # in another terminal; waits for active HTTP runs
+npm run power:on -- --local     # also start Ollama, if installed
+```
+
+Control + C in the startup terminal also requests a graceful shutdown. New HTTP
+runs receive 503 while shutting down; existing pipeline and standalone-agent HTTP
+runs finish before the managed Next.js process is stopped. Closing the terminal or
+forcing a process to quit bypasses this protection. CLI `npm run pipeline` processes
+are separate and are not controlled by these commands.
+
+The default address is `127.0.0.1:3100`. For n8n over Tailscale, set
+`FACTORY_HOST=100.117.196.35` in `.env.local` alongside the existing `FACTORY_TOKEN`.
+Use the same host when starting, checking and stopping. An older server started
+with `npm run dev` must first be stopped with Control + C after its runs finish;
+the power script never kills an unrelated listener.
+
+`--local` (or `OLLAMA_ENABLED=1`) starts `ollama serve` only for this session and stops that server after
+the factory finishes. It refuses to adopt an already running Ollama service. Do not
+configure Ollama to open at login or run it through `brew services start` if you want
+this manual lifecycle. Model files stay on disk after shutdown. With `OLLAMA_ENABLED=1`, local inference automatically backs up failed cloud calls; it also works without an OpenRouter key. Ollama is bound to loopback with cloud features disabled and one parallel request. The default model is `qwen2.5-coder:7b`, downloaded separately into the git-ignored `.models/` folder. Models unload after 30 seconds without inference. The existing JSON contracts, module guards and patch verification apply to local replies too.
+
+
+The dashboard includes an **Apagar fábrica** control and shows the local model's
+memory state. It is enabled only under the managed launcher. Once the server stops,
+use **HexaBlock** on the Desktop to start it again; an offline webpage cannot start
+a server by itself. No lightweight background service or login item is installed.
+The same `.runs/` directory and token are retained when the runtime is updated.

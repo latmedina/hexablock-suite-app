@@ -1,3 +1,5 @@
+import { LocalFallbackGateway } from '../application/aspects/local-fallback-gateway';
+import { OllamaGateway, localConfig } from '../infrastructure/ollama-gateway';
 import { randomUUID } from 'node:crypto';
 import { LoggedAgent } from '../application/aspects/logged-agent';
 import { FallbackLlmGateway } from '../application/aspects/fallback-gateway';
@@ -62,11 +64,13 @@ export class AgentFactory {
 
   static fromEnv(env: Readonly<Record<string, string | undefined>> = process.env): AgentFactory {
     const cfg = readEnv(env);
-    const gateway = new FallbackLlmGateway(
+    const local = localConfig(env);
+    const cloud = cfg.openRouterApiKey ? new FallbackLlmGateway(
       new RetryingLlmGateway(
         new OpenRouterGateway({ apiKey: cfg.openRouterApiKey, baseUrl: cfg.openRouterBaseUrl, appUrl: 'https://github.com/latmedina/hexablock-suite-app', appTitle: 'HexaBlock Agent Factory', timeoutMs: cfg.timeoutMs }),
       ),
-    );
+    ) : undefined;
+    const gateway = new LocalFallbackGateway(cloud, local.enabled ? new OllamaGateway(local) : undefined);
     const roots = { app: cfg.appRepoRoot, api: cfg.apiRepoRoot };
     return new AgentFactory(loadAgentDefinitions(env), gateway, new FsPromptRepository(cfg.promptsDir, roots), new JsonlRunLog(cfg.runsDir), new FsRepoFiles(roots), undefined, undefined, {
       verifier: cfg.verifyPatches ? new WorktreeVerifier(roots) : undefined,
