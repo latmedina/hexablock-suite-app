@@ -39,8 +39,10 @@ export interface ArchitectToDevResult {
   readonly patch: AgentRunResult<FilePatch>;
   /** Present when a verifier is configured: the checks of the LAST patch. */
   readonly verification?: VerifyReport;
-  /** Dev repair rounds that followed a failed verification (0 = first patch passed or no verifier). */
+  /** Dev rounds after the first patch: repairs plus fresh starts (0 = first patch passed or no verifier). */
   readonly repairRounds: number;
+  /** Times Dev started over from the spec with another model. */
+  readonly freshStarts: number;
   /** Present when a reviewer is configured and answered; reviewError when it did not. */
   readonly review?: AgentRunResult<ReviewReport>;
   readonly reviewError?: string;
@@ -61,8 +63,13 @@ export interface PipelineOptions {
   readonly events?: IRunEvents;
   /** Cancels the run: the current model call or check is stopped and no further step starts. */
   readonly signal?: AbortSignal;
-  /** No repair round starts once the run has taken this long; the run ends as needs_human. */
+  /** No repair round or fresh start begins once the run has taken this long; the run ends as needs_human. */
   readonly budgetMs?: number;
+  /**
+   * When Dev cannot get a patch through the checks within its repair rounds, start over from the spec this many
+   * times, led by the next model in the chain, with the failures of the earlier try as warnings.
+   */
+  readonly maxFreshStarts?: number;
 }
 
 export class RunCancelledError extends Error {
@@ -161,21 +168,48 @@ export class ArchitectToDevPipeline {
 
     const dev = this.devFor(repo);
     const devPrompt = await this.devPrompt(spec.output, repo, [...existing]);
-    let patch = await this.step('dev', 0, dev, { moduleKey, check: violations, userPrompt: devPrompt }, summarizePatch);
-    enforceGuards(patch);
+    const { verifier, reviewer } = this.options;
+    const maxRounds = this.options.maxRepairRounds ?? 3;
+    const maxFresh = this.options.maxFreshStarts ?? 1;
+    const budgetMs = this.options.budgetMs ?? Number.POSITIVE_INFINITY;
+    const inBudget = () => Date.now() - this.startedAt < budgetMs;
 
+    let patch: AgentRunResult<FilePatch> | undefined;
     let verification: VerifyReport | undefined;
     let review: AgentRunResult<ReviewReport> | undefined;
     let reviewError: string | undefined;
     let reviewedRound = -1;
-    let repairRounds = 0;
-    const { verifier, reviewer } = this.options;
-    const maxRounds = this.options.maxRepairRounds ?? 3;
-    const budgetMs = this.options.budgetMs ?? Number.POSITIVE_INFINITY;
-    const canRepair = () => repairRounds < maxRounds && Date.now() - this.startedAt < budgetMs;
+    let round = 0; // every Dev call after the first, for the dashboard
+    let roundsInTry = 0; // repairs since the last fresh start
+    let freshStarts = 0;
+    let modelOffset = 0; // each new Dev call is led by the next model in the chain
+    let best: { patch: AgentRunResult<FilePatch>; verification?: VerifyReport } | undefined;
+    let lastError: unknown;
+    let firstError: unknown; // what the run fails with if no try produced a usable patch
 
-    const runReview = async (round: number): Promise<void> => {
-      if (!reviewer) return;
+    const failedChecks = (v?: VerifyReport) => (v ? v.checks.filter((c) => !c.ok).length : 0);
+    const keepBest = () => {
+      if (patch && (!best || failedChecks(verification) <= failedChecks(best.verification))) best = { patch, verification };
+    };
+    /** One Dev call; guard or output errors end the current try instead of the run. */
+    const callDev = async (userPrompt: string): Promise<boolean> => {
+      try {
+        const next = await this.step('dev', round, dev, { moduleKey, check: violations, userPrompt, modelOffset }, summarizePatch);
+        enforceGuards(next);
+        patch = next;
+        verification = undefined;
+        return true;
+      } catch (error) {
+        if (error instanceof RunCancelledError) throw error;
+        lastError = error;
+        firstError ??= error;
+        return false;
+      } finally {
+        modelOffset += 1;
+      }
+    };
+    const runReview = async (): Promise<void> => {
+      if (!reviewer || !patch) return;
       reviewedRound = round;
       try {
         review = await this.step('reviewer', round, reviewer, { moduleKey, userPrompt: reviewPrompt(spec.output, patch.output, verification) }, (out) => out);
@@ -186,33 +220,66 @@ export class ArchitectToDevPipeline {
         reviewError = `${(error as Error).name}: ${(error as Error).message}`;
       }
     };
-    const repair = async (feedback: string): Promise<void> => {
-      repairRounds += 1;
-      patch = await this.step('dev', repairRounds, dev, { moduleKey, check: violations, userPrompt: repairPrompt(devPrompt, patch.output, feedback) }, summarizePatch);
-      enforceGuards(patch);
+    const repair = (feedback: string): Promise<boolean> => {
+      round += 1;
+      roundsInTry += 1;
+      return callDev(repairPrompt(devPrompt, patch!.output, feedback));
+    };
+    const freshStart = (): Promise<boolean> => {
+      round += 1;
+      roundsInTry = 0;
+      freshStarts += 1;
+      const warnings = best?.verification ? describeFailures(best.verification, best.patch.output.files) : lastError ? String((lastError as Error).message) : '';
+      return callDev(freshPrompt(devPrompt, warnings));
     };
 
-    // Verify -> (repair) -> ... -> review -> (repair on blocking findings) -> verify again, within one budget.
+    // Try: Dev -> verify -> (repair, each round led by another model) -> review -> (repair on blocking findings).
+    // A try that cannot pass the checks ends in a fresh start from the spec, up to maxFresh times, within the budget.
+    let ok = await callDev(devPrompt);
     for (;;) {
-      if (verifier) verification = await this.verify(verifier, repo, patch.output, repairRounds);
-      if (verification && !verification.ok) {
-        if (!canRepair()) break;
-        await repair(`## CHECK FAILURES (type check, tests, lint on the patched repository)\n\n${describeFailures(verification, patch.output.files)}`);
+      if (ok && patch) {
+        if (verifier) verification = await this.verify(verifier, repo, patch.output, round);
+        if (verification && !verification.ok) {
+          keepBest();
+          if (roundsInTry < maxRounds && inBudget()) {
+            ok = await repair(`## CHECK FAILURES (type check, tests, lint on the patched repository)\n\n${describeFailures(verification, patch.output.files)}`);
+            continue;
+          }
+        } else {
+          await runReview();
+          const blocking = review ? blockingFindings(review.output) : [];
+          if (blocking.length > 0 && roundsInTry < maxRounds && inBudget()) {
+            keepBest();
+            ok = await repair(`## REVIEW FINDINGS (blocking; the code passed the automatic checks)\n\n${blocking.map((f) => `- [${f.severity}] ${f.file} (${f.rule}): ${f.message}${f.suggestion ? `\n  Fix: ${f.suggestion}` : ''}`).join('\n')}`);
+            continue;
+          }
+          break;
+        }
+      } else if (patch && roundsInTry < maxRounds && inBudget()) {
+        // The repair reply was unusable: keep the previous patch and ask the next model.
+        ok = await repair(`## CHECK FAILURES\n\n${verification ? describeFailures(verification, patch.output.files) : 'Your previous reply was rejected.'}`);
         continue;
       }
-      await runReview(repairRounds);
-      const blocking = review ? blockingFindings(review.output) : [];
-      if (blocking.length > 0 && canRepair()) {
-        await repair(`## REVIEW FINDINGS (blocking; the code passed the automatic checks)\n\n${blocking.map((f) => `- [${f.severity}] ${f.file} (${f.rule}): ${f.message}${f.suggestion ? `\n  Fix: ${f.suggestion}` : ''}`).join('\n')}`);
+      if (freshStarts < maxFresh && inBudget()) {
+        ok = await freshStart();
         continue;
       }
       break;
     }
+
+    keepBest();
+    if (!best) throw firstError ?? new Error('Dev produced no usable patch.');
+    if (best.patch !== patch) {
+      patch = best.patch;
+      verification = best.verification;
+      review = undefined;
+      reviewedRound = -1;
+    }
     // The checks failed for good: still get the reviewer's diagnosis of the final patch, for the human.
-    if (reviewer && reviewedRound !== repairRounds && Date.now() - this.startedAt < budgetMs) await runReview(repairRounds);
+    if (reviewer && reviewedRound !== round && inBudget()) await runReview();
 
     const status: RunStatus = (verification?.ok ?? true) && !(review && blockingFindings(review.output).length > 0) ? 'ready' : 'needs_human';
-    return { spec, patch, verification, repairRounds, review, reviewError, status };
+    return { spec, patch, verification, repairRounds: round, freshStarts, review, reviewError, status };
   }
 
   /** Runs one agent and reports it as a dashboard step. */
@@ -300,6 +367,17 @@ function summarizePatch(patch: FilePatch): unknown {
 
 function tail(text: string, max: number): string {
   return text.length <= max ? text : `…${text.slice(-max)}`;
+}
+
+function freshPrompt(devPrompt: string, warnings: string): string {
+  if (!warnings) return devPrompt;
+  return [
+    devPrompt,
+    '',
+    '## An earlier attempt at this spec failed with these errors. Start from scratch and avoid them:',
+    '',
+    warnings,
+  ].join('\n');
 }
 
 function repairPrompt(devPrompt: string, previous: FilePatch, feedback: string): string {

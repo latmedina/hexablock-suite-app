@@ -44,7 +44,7 @@ describe('Pipeline verification and repair', () => {
   it('should_return_failed_verification_when_repair_rounds_run_out', async () => {
     // Arrange
     const verifier = new ScriptedVerifier([failed, failed]);
-    const { factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch())], { verifier, maxRepairRounds: 1 });
+    const { factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch())], { verifier, maxRepairRounds: 1, maxFreshStarts: 0 });
     // Act
     const result = await factory.architectToDev().run('Implement hex geometry');
     // Assert
@@ -116,7 +116,7 @@ describe('Pipeline verification and repair', () => {
   it('should_mark_run_needs_human_when_checks_still_fail_after_all_rounds', async () => {
     // Arrange
     const verifier = new ScriptedVerifier([failed, failed]);
-    const { events, factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch()), JSON.stringify(review)], { verifier, maxRepairRounds: 1, review: true });
+    const { events, factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch()), JSON.stringify(review)], { verifier, maxRepairRounds: 1, maxFreshStarts: 0, review: true });
     // Act
     const result = await factory.architectToDev().run('Implement hex geometry');
     // Assert
@@ -147,5 +147,46 @@ describe('Pipeline verification and repair', () => {
     await expect(act).rejects.toThrow(/cancelled/);
     expect(llm.requests).toHaveLength(2);
     expect(events.at(-1)).toMatchObject({ type: 'run.finished', ok: false, error: expect.stringContaining('RunCancelledError') });
+  });
+
+  it('should_lead_each_repair_round_with_next_model_when_checks_fail', async () => {
+    // Arrange
+    const verifier = new ScriptedVerifier([failed, passed]);
+    const { llm, factory } = setup([JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch())], { verifier });
+    // Act
+    await factory.architectToDev().run('Implement hex geometry');
+    // Assert
+    expect(llm.requests[2]?.models[0]).not.toBe(llm.requests[1]?.models[0]);
+    expect(llm.requests[2]?.models[0]).toBe(llm.requests[1]?.models[1]);
+  });
+
+  it('should_start_over_from_spec_with_another_model_when_repairs_run_out', async () => {
+    // Arrange
+    const verifier = new ScriptedVerifier([failed, failed, passed]);
+    const replies = [JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch()), JSON.stringify(validPatch())];
+    const { llm, factory } = setup(replies, { verifier, maxRepairRounds: 1, maxFreshStarts: 1 });
+    // Act
+    const result = await factory.architectToDev().run('Implement hex geometry');
+    // Assert
+    expect(result.status).toBe('ready');
+    expect(result.freshStarts).toBe(1);
+    const freshPrompt = llm.requests[3]?.messages[1]?.content ?? '';
+    expect(freshPrompt).toContain('Start from scratch');
+    expect(freshPrompt).toContain("Cannot find name 'HexCoord'");
+    expect(freshPrompt).not.toContain('Your previous patch');
+    expect(llm.requests[3]?.models[0]).not.toBe(llm.requests[2]?.models[0]);
+  });
+
+  it('should_keep_patch_with_fewest_failed_checks_when_every_try_fails', async () => {
+    // Arrange
+    const twoFailed: VerifyReport = { ok: false, checks: [...failed.checks, { name: 'test', ok: false, output: 'boom', durationMs: 5 }] };
+    const verifier = new ScriptedVerifier([twoFailed, failed, twoFailed]);
+    const replies = [JSON.stringify(validSpec), JSON.stringify(validPatch()), JSON.stringify(validPatch()), JSON.stringify(validPatch())];
+    const { factory } = setup(replies, { verifier, maxRepairRounds: 1, maxFreshStarts: 1 });
+    // Act
+    const result = await factory.architectToDev().run('Implement hex geometry');
+    // Assert
+    expect(result.status).toBe('needs_human');
+    expect(result.verification?.checks.filter((c) => !c.ok)).toHaveLength(1);
   });
 });

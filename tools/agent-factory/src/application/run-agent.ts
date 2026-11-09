@@ -13,6 +13,8 @@ export interface RunAgentInput {
   readonly onAttempt?: (attempt: AttemptInfo) => void;
   /** Cancels the model call when the run is cancelled. */
   readonly signal?: AbortSignal;
+  /** Starts the model chain this many places later, so a retry is led by a different model. */
+  readonly modelOffset?: number;
 }
 
 export interface AttemptInfo {
@@ -58,7 +60,7 @@ export class RunAgent<TOut> {
     while (attempts < 2) {
       attempts += 1;
       // The repair turn starts from the next model: the one that just failed is the least likely to fix it.
-      const models = attempts === 1 ? this.definition.models : [...this.definition.models.slice(1), ...this.definition.models.slice(0, 1)];
+      const models = rotate(this.definition.models, (input.modelOffset ?? 0) + attempts - 1);
       const startedAt = Date.now();
       const response = await this.llm.complete({
         models,
@@ -108,4 +110,10 @@ export class RunAgent<TOut> {
     }
     return { success: false, issues: result.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ') };
   }
+}
+
+function rotate<T>(items: readonly T[], by: number): T[] {
+  if (items.length === 0) return [];
+  const k = ((by % items.length) + items.length) % items.length;
+  return [...items.slice(k), ...items.slice(0, k)];
 }
