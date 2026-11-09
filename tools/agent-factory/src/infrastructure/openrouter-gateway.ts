@@ -50,7 +50,7 @@ export class OpenRouterGateway implements ILlmGateway {
         'X-Title': this.config.appTitle,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.config.timeoutMs),
+      signal: request.signal ? AbortSignal.any([AbortSignal.timeout(this.config.timeoutMs), request.signal]) : AbortSignal.timeout(this.config.timeoutMs),
     });
 
     const text = await res.text();

@@ -13,6 +13,8 @@ export interface FactoryEnv {
   readonly maxRepairRounds: number;
   /** Ask the Reviewer agent for a verdict on the final patch (REVIEW_PATCHES=0 disables). */
   readonly reviewPatches: boolean;
+  /** No new repair round starts after this long (RUN_BUDGET_MINUTES, default 12). */
+  readonly runBudgetMs: number;
 }
 
 export function readEnv(env: Readonly<Record<string, string | undefined>> = process.env, cwd = process.cwd()): FactoryEnv {
@@ -29,6 +31,7 @@ export function readEnv(env: Readonly<Record<string, string | undefined>> = proc
     verifyPatches: env.VERIFY_PATCHES !== '0',
     maxRepairRounds: Math.max(0, Number(env.MAX_REPAIR_ROUNDS ?? 3)),
     reviewPatches: env.REVIEW_PATCHES !== '0',
+    runBudgetMs: Math.max(1, Number(env.RUN_BUDGET_MINUTES ?? 12)) * 60_000,
   };
 }
 

@@ -7,6 +7,8 @@ export interface LlmRequest {
   readonly messages: readonly ChatMessage[];
   readonly temperature: number;
   readonly maxTokens: number;
+  /** Aborts the call when the run is cancelled. */
+  readonly signal?: AbortSignal;
 }
 
 export interface LlmResponse {
@@ -71,7 +73,7 @@ export interface VerifyReport {
 
 /** Port to the verification step: applies a patch to a throwaway copy of the repo and runs its checks. */
 export interface IPatchVerifier {
-  verify(repo: RepoKey, files: readonly PatchFile[]): Promise<VerifyReport>;
+  verify(repo: RepoKey, files: readonly PatchFile[], signal?: AbortSignal): Promise<VerifyReport>;
 }
 
 export interface PatchFile {

@@ -43,7 +43,7 @@ export class WorktreeVerifier implements IPatchVerifier {
     private readonly timeoutMs = 240_000,
   ) {}
 
-  async verify(repo: RepoKey, files: readonly PatchFile[]): Promise<VerifyReport> {
+  async verify(repo: RepoKey, files: readonly PatchFile[], signal?: AbortSignal): Promise<VerifyReport> {
     const root = this.roots[repo];
     const dir = await mkdtemp(path.join(tmpdir(), `hexablock-verify-${repo}-`));
     const added = await run('git', ['-C', root, 'worktree', 'add', '--detach', '--force', dir, 'HEAD'], root, 60_000);
@@ -62,9 +62,10 @@ export class WorktreeVerifier implements IPatchVerifier {
       const scripts = await readScripts(dir);
       const checks: VerifyCheck[] = [];
       for (const command of this.commands[repo]) {
+        if (signal?.aborted) break;
         if (!scripts.has(command.script)) continue;
         const args = ['run', command.script, ...(command.args?.length ? ['--', ...command.args] : [])];
-        const result = await run('npm', args, dir, this.timeoutMs);
+        const result = await run('npm', args, dir, this.timeoutMs, signal);
         checks.push({ name: command.name, ok: result.ok, output: result.output, durationMs: result.durationMs });
       }
       return { ok: checks.every((c) => c.ok), checks };
@@ -92,7 +93,7 @@ interface RunResult {
   readonly durationMs: number;
 }
 
-function run(cmd: string, args: readonly string[], cwd: string, timeoutMs: number): Promise<RunResult> {
+function run(cmd: string, args: readonly string[], cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<RunResult> {
   const startedAt = Date.now();
   return new Promise((resolve) => {
     let output = '';
@@ -107,10 +108,16 @@ function run(cmd: string, args: readonly string[], cwd: string, timeoutMs: numbe
       output += `\n[timed out after ${Math.round(timeoutMs / 1000)} s]`;
       child.kill('SIGKILL');
     }, timeoutMs);
+    const onAbort = () => {
+      output += '\n[cancelled]';
+      child.kill('SIGKILL');
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
     const done = (ok: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       const clean = output.replace(ANSI, '').trim();
       resolve({ ok, output: clean.length > MAX_OUTPUT_CHARS ? `…${clean.slice(-MAX_OUTPUT_CHARS)}` : clean, durationMs: Date.now() - startedAt });
     };

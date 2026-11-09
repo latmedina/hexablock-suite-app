@@ -22,6 +22,8 @@ export interface FactoryExtras {
   readonly maxRepairRounds?: number;
   readonly review?: boolean;
   readonly events?: IEventSink;
+  /** Stop starting repair rounds after this many ms. */
+  readonly budgetMs?: number;
 }
 
 /**
@@ -45,12 +47,14 @@ export class AgentFactory {
     return new LoggedAgent(new RunAgent(definition, this.llm, this.prompts), this.log, this.clock, this.runId);
   }
 
-  architectToDev(): ArchitectToDevPipeline {
+  architectToDev(signal?: AbortSignal): ArchitectToDevPipeline {
     return new ArchitectToDevPipeline(this.create('architect'), (repo) => this.create(repo === 'app' ? 'dev-app' : 'dev-api'), this.files, {
       verifier: this.extras.verifier,
       maxRepairRounds: this.extras.maxRepairRounds,
       reviewer: this.extras.review ? this.create('reviewer') : undefined,
       events: new RunEvents(this.extras.events ?? NO_EVENTS, this.runId, this.clock),
+      budgetMs: this.extras.budgetMs,
+      signal,
     });
   }
 
@@ -65,6 +69,7 @@ export class AgentFactory {
     return new AgentFactory(loadAgentDefinitions(env), gateway, new FsPromptRepository(cfg.promptsDir, roots), new JsonlRunLog(cfg.runsDir), new FsRepoFiles(roots), undefined, undefined, {
       verifier: cfg.verifyPatches ? new WorktreeVerifier(roots) : undefined,
       maxRepairRounds: cfg.maxRepairRounds,
+      budgetMs: cfg.runBudgetMs,
       review: cfg.reviewPatches,
       events: eventHub(cfg.runsDir),
     });

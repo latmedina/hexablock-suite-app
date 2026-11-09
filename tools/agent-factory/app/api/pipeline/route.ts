@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { isAuthorized } from '../../../src/infrastructure/auth';
 import { readEnv } from '../../../src/config/env';
 import { archiveRun } from '../../../src/infrastructure/run-archive';
+import { finishRun, registerRun } from '../../../src/infrastructure/run-registry';
 import { AgentFactory } from '../../../src/main/agent-factory';
 
 export const runtime = 'nodejs';
@@ -12,6 +13,7 @@ const Body = z.object({ request: z.string().min(10).max(8000), source: z.enum(['
 
 /** The agents' output was rejected (invalid JSON or a broken guard) even after the repair turn. */
 const GUARD_ERRORS = new Set(['ModuleBoundaryError', 'UnapprovedOverwriteError', 'RemovedExportsError', 'AgentOutputError']);
+const CANCELLED = 'RunCancelledError';
 
 /**
  * POST /api/pipeline  { "request": "..." }  -> Architect -> Dev -> verification (+ repair) -> Reviewer.
@@ -24,9 +26,13 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Body must be { "request": string (10..8000 chars) }' }, { status: 400 });
 
+  let runId: string | undefined;
   try {
     const factory = AgentFactory.fromEnv();
-    const result = await factory.architectToDev().run(parsed.data.request, parsed.data.source ?? 'api');
+    runId = factory.runId;
+    // Cancelled from the dashboard, or by the caller hanging up (e.g. an n8n timeout).
+    const controller = registerRun(runId);
+    const result = await factory.architectToDev(AbortSignal.any([controller.signal, req.signal])).run(parsed.data.request, parsed.data.source ?? 'api');
     const { spec, patch, verification, review } = result;
     await archiveRun(readEnv().runsDir, factory.runId, result).catch(() => undefined);
     return NextResponse.json({
@@ -39,7 +45,9 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const err = error as Error;
-    const status = GUARD_ERRORS.has(err.name) ? 422 : 502;
-    return NextResponse.json({ error: err.name, message: err.message }, { status });
+    const status = err.name === CANCELLED ? 409 : GUARD_ERRORS.has(err.name) ? 422 : 502;
+    return NextResponse.json({ error: err.name, message: err.message, runId }, { status });
+  } finally {
+    if (runId) finishRun(runId);
   }
 }
