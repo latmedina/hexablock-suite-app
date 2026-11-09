@@ -31,7 +31,8 @@ whether it was started from the page, from n8n or from the API: the pipeline tra
 tokens, the spec, the patch files, the tsc/jest/lint output and the review findings. Events are streamed with
 Server-Sent Events from `GET /api/events` and kept in `.runs/events.jsonl`, so history survives restarts; each
 run's full result is also written to `.runs/<runId>/`. When `FACTORY_TOKEN` is set the page asks for it once and
-keeps it in an HttpOnly cookie. Runs started with `npm run pipeline` (another process) only appear after a restart.
+keeps it in an HttpOnly cookie. Under `next dev`, Next only serves its scripts to known hosts: Tailscale names
+(`*.ts.net`) are allowed; add any other host or IP to `FACTORY_DEV_ORIGINS`, or the page stays on "Conectando…". Runs started with `npm run pipeline` (another process) only appear after a restart.
 
 ## Verification and review
 
