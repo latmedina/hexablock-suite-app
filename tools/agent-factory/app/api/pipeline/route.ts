@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic';
 
 const Body = z.object({ request: z.string().min(10).max(8000) });
 
-/** Guard failures: the Dev agent's patch broke a rule even after its repair turn. */
-const GUARD_ERRORS = new Set(['ModuleBoundaryError', 'UnapprovedOverwriteError']);
+/** The agents' output was rejected (invalid JSON or a broken guard) even after the repair turn. */
+const GUARD_ERRORS = new Set(['ModuleBoundaryError', 'UnapprovedOverwriteError', 'RemovedExportsError', 'AgentOutputError']);
 
 /**
  * POST /api/pipeline  { "request": "..." }  -> Architect (agent 1) -> Dev (agent 2). Returns spec + patch.

@@ -48,7 +48,7 @@ npm run pipeline -- "Implement HexBoard<TCell> as in docs/specs/P2-hex-geometry.
 
 HTTP API: `POST /api/pipeline {"request": "..."}` and `POST /api/agents/<id> {"prompt": "...", "module": "app/hexa-fit"}`.
 The Dev agents (`dev-app`, `dev-api`) only run through `/api/pipeline`, which feeds them the spec and repo context and
-answers 422 when a patch writes outside its module or over an existing file; `/api/agents/dev-*` answers 409.
+answers 422 when a patch writes outside its module, over an existing file, or drops an export of a file it modifies; `/api/agents/dev-*` answers 409.
 
 Swap a model without code changes: `AGENT_REVIEWER_MODELS="google/gemma-4-31b-it:free,recursive/flint-v1.0:free"`.
 
