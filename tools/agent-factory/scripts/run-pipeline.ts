@@ -19,5 +19,6 @@ const outDir = await archiveRun(readEnv().runsDir, factory.runId, result);
 const checks = result.verification ? result.verification.checks.map((c) => `${c.name} ${c.ok ? 'OK' : 'FAILED'}`).join(', ') : 'not run';
 console.log(`Architect: ${result.spec.modelUsed} | Dev: ${result.patch.modelUsed} | repair rounds: ${result.repairRounds}`);
 console.log(`Checks: ${checks}`);
+console.log(result.status === 'ready' ? 'Status: READY (checks pass, no blocking review findings)' : 'Status: NEEDS HUMAN (see checks and review)');
 if (result.review) console.log(`Reviewer (${result.review.modelUsed}): ${result.review.output.verdict} — ${result.review.output.summary}`);
 console.log(`Spec and patch written to ${outDir} — review, then copy into your dev/<name> branch.`);
