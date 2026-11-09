@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       runId: factory.runId,
       status: result.status,
       architect: { model: spec.modelUsed, attempts: spec.attempts, spec: spec.output },
-      dev: { model: patch.modelUsed, attempts: patch.attempts, repairRounds: result.repairRounds, patch: patch.output },
+      dev: { model: patch.modelUsed, attempts: patch.attempts, repairRounds: result.repairRounds, freshStarts: result.freshStarts, patch: patch.output },
       verification: verification ?? null,
       review: review ? { model: review.modelUsed, ...review.output } : result.reviewError ? { error: result.reviewError } : null,
     });

@@ -43,7 +43,9 @@ fails, Dev gets each type error with its lines of code and each failing test, an
 patch. Once the checks pass, the Reviewer (another model family) reviews spec + patch; blocker and major
 findings go back to Dev too, and the patch is checked again. Both kinds of repair share one budget,
 `MAX_REPAIR_ROUNDS` (3). The run ends `ready` (checks pass, nothing blocking) or `needs_human`.
-No repair round starts after `RUN_BUDGET_MINUTES` (12). A running run can be cancelled from the dashboard
+Each repair round is led by the next model in the chain; when the rounds run out and the checks still fail, Dev
+starts over from the spec with another model (`MAX_FRESH_STARTS`, 1), and the best patch is kept.
+No repair round or fresh start begins after `RUN_BUDGET_MINUTES` (25). A running run can be cancelled from the dashboard
 (`POST /api/runs/<runId>/cancel`), or by the caller hanging up; the current model call or check stops at once. The real working copy is never modified, but the generated tests do run on your
 machine. Turn either step off with `VERIFY_PATCHES=0` / `REVIEW_PATCHES=0`.
 

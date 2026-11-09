@@ -20,6 +20,7 @@ import { WorktreeVerifier } from '../infrastructure/worktree-verifier';
 export interface FactoryExtras {
   readonly verifier?: IPatchVerifier;
   readonly maxRepairRounds?: number;
+  readonly maxFreshStarts?: number;
   readonly review?: boolean;
   readonly events?: IEventSink;
   /** Stop starting repair rounds after this many ms. */
@@ -51,6 +52,7 @@ export class AgentFactory {
     return new ArchitectToDevPipeline(this.create('architect'), (repo) => this.create(repo === 'app' ? 'dev-app' : 'dev-api'), this.files, {
       verifier: this.extras.verifier,
       maxRepairRounds: this.extras.maxRepairRounds,
+      maxFreshStarts: this.extras.maxFreshStarts,
       reviewer: this.extras.review ? this.create('reviewer') : undefined,
       events: new RunEvents(this.extras.events ?? NO_EVENTS, this.runId, this.clock),
       budgetMs: this.extras.budgetMs,
@@ -69,6 +71,7 @@ export class AgentFactory {
     return new AgentFactory(loadAgentDefinitions(env), gateway, new FsPromptRepository(cfg.promptsDir, roots), new JsonlRunLog(cfg.runsDir), new FsRepoFiles(roots), undefined, undefined, {
       verifier: cfg.verifyPatches ? new WorktreeVerifier(roots) : undefined,
       maxRepairRounds: cfg.maxRepairRounds,
+      maxFreshStarts: cfg.maxFreshStarts,
       budgetMs: cfg.runBudgetMs,
       review: cfg.reviewPatches,
       events: eventHub(cfg.runsDir),
