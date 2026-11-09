@@ -31,12 +31,23 @@ describe('RunAgent', () => {
 
   it('should_throw_agent_output_error_when_repair_also_fails', async () => {
     // Arrange
-    const llm = new ScriptedLlm(['not json', 'still not json']);
+    const llm = new ScriptedLlm(['not json', 'still not json', 'nope']);
     const agent = new RunAgent(architect, llm, new InMemoryPrompts());
     // Act
     const act = agent.execute({ userPrompt: 'design P2' });
     // Assert
     await expect(act).rejects.toBeInstanceOf(AgentOutputError);
+  });
+
+  it('should_ask_third_model_when_architect_fails_twice', async () => {
+    // Arrange
+    const llm = new ScriptedLlm(['not json', 'still not json', JSON.stringify(validSpec)]);
+    const agent = new RunAgent(architect, llm, new InMemoryPrompts());
+    // Act
+    const result = await agent.execute({ userPrompt: 'design P2' });
+    // Assert
+    expect(result.attempts).toBe(3);
+    expect(llm.requests[2]?.models[0]).toBe(architect.models[2]);
   });
 
   it('should_append_output_schema_to_system_prompt_when_building_messages', async () => {

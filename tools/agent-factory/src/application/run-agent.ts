@@ -57,7 +57,8 @@ export class RunAgent<TOut> {
     let attempts = 0;
     let lastIssues = '';
     let lastRaw = '';
-    while (attempts < 2) {
+    const maxAttempts = this.definition.maxAttempts ?? 2;
+    while (attempts < maxAttempts) {
       attempts += 1;
       // The repair turn starts from the next model: the one that just failed is the least likely to fix it.
       const models = rotate(this.definition.models, (input.modelOffset ?? 0) + attempts - 1);
